@@ -47,6 +47,17 @@ process data for the **National Neighbourhood Improvement Programme
 
     -   Preparation of dashboard-ready datasets
 
+## Usage
+
+Before running any of the workflows in this project, make sure the
+required R packages are installed. You can install all dependencies in
+one step:
+
+    devtools::install_deps()
+
+Once dependencies are installed, you can run the scripts in the R/
+directory as needed for data processing and analysis.
+
 [1] For an introduction to what neighbourhood health involves, please
 see:
 <https://www.strategyunitwm.nhs.uk/news/strategy-unit-contribution-neighbourhood-health>,
