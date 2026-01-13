@@ -1,5 +1,5 @@
 # Helper functions ------------------------------------------------------------
-# These are short, utility functions to help facilitate tasks.
+# These are short utility functions to help facilitate tasks.
 
 #' Render the readme file
 #'
