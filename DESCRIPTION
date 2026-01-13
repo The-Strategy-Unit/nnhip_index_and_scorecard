@@ -1,0 +1,18 @@
+Package: nnhip_index_and_scorecard
+Title: NNHIP Data Processing and Integration Workflows
+Version: 0.0.1
+Authors@R: 
+    person(given = "Craig", family = "Parylo", email = "craig.parylo2@nhs.net", role = c("aut", "cre"), comment = c(ORCID = "0000-0003-4297-7808")),
+    person(given = "André", family = "Bilbrough", role = c("aut")),
+    person(given = "Mike", family = "Woodall", role = c("pdr"), comment = c(ORCID = "0009-0009-3827-4529")),
+    person(given = "The Strategy Unit", role = c("cph"), comment = c("Organisational author", ROR = "https://ror.org/04bz1tk47"))
+Description: Tools and code supporting two core NNHIP data workflows: 
+  (1) ingestion, validation and transformation of monthly aggregate submissions
+  for Place-level scorecards, and (2) secure linkage of survey data with UDAL 
+  datasets to support the production of de-identified, patient-level dashboards.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Imports: 
+    dplyr
