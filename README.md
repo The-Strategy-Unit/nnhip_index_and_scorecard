@@ -1,5 +1,7 @@
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
+<img src="inst/figures/hex.png" align="right" width="180">
+
 # National Neighbourhood Health Improvement Programme (NNHIP)
 
 <!-- badges: start -->
