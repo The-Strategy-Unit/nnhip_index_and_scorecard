@@ -1,0 +1,65 @@
+---
+title: "Test Input Files"
+author: "The Strategy Unit"
+output:
+  md_document:
+    variant: gfm
+    preserve_yaml: true
+---
+
+[← Back to Project README](../../README.md)
+
+# Purpose
+
+This folder contains sample input files used to test validation rules and the end-to-end data submission workflow.
+
+# Folder structure
+
+-   `valid/` - files expected to pass all validation checks
+
+-   `invalid/` - files intentionally designed to fail specific rules
+
+-   `README.Rmd` - documentation for how to use and extend the test
+
+## File overview
+
+| Folder | File name | Description | Expected outcome |
+|--------|-----------------|----------------------------------|-------------|
+| valid | valid_01.xlsx | Typical expected monthly submission with correct structure and values | Pass |
+| edge_cases | invalid_unexpected_extension_01.ods | Is saved as an `.ods` file type instead of the expected `.xlsx` | Alert: unexpected file type |
+| edge_cases | invalid_unexpected_extension_02.xls | Is saved as an `.xls` file type instead of the expected `.xlsx` | Alert: unexpected file type |
+| edge_cases | invalid_unexpected_extension_03.xlsm | Is saved as an `.xlsm` file type instead of the expected `.xlsx` | Alert: unexpected file type |
+| edge_cases | invalid_decimal_values_where_counts_expected.xlsx | Numerator and denominator cells contain decimal values which indicates they have been completed incorrectly | Alert: unexpected data type |
+| invalid | invalid_unexpected_extension_04.pdf | Is saved as a `.pdf` file type instead of the expected `.xlsx` | Fail: unexpected file type |
+| invalid | invalid_missing_sheet_instructions.xlsx | The sheet named 'Instructions' is missing | Fail: missing sheet |
+| invalid | invalid_missing_sheet_submissiontemplate.xlsx | The sheet named 'SubmissionTemplate' is missing | Fail: missing sheet |
+| invalid | invalid_missing_placename.xlsx | The place name is missing | Fail: missing place name |
+| invalid | invalid_unexpected_placename.xlsx | The place name is not in the list of expected place names | Fail: unexpected place name |
+| invalid | invalid_unexpected_submissionperiod.xlsx | The submission period is not in the list of expected submission periods | Fail: unexpected submission period |
+| invalid | invalid_missing_column_agegroup.xlsx | The age group column `60-69` is missing | Fail: missing data column |
+| invalid | invalid_missing_column_ethnicity.xlsx | The ethnic group `Other` is missing | Fail: missing data column |
+| invalid | invalid_missing_metric_o3.xlsx | The metric O3 (Number of inpatient bed days per 1,000 patients in the cohort) is missing | Fail: missing metric row |
+| invalid | invalid_missing_values.xlsx | Missing values are present in the data entry area | Fail: missing values |
+| invalid | invalid_text_where_counts_expected.xlsx | Text values where counts are expected | Fail: incorrect data type |
+
+## How to use these files
+
+These files are designed for use when:
+
+-   Developing or modifying validation rules
+
+-   Testing the Shiny upload workflow
+
+## Adding new test files
+
+A short set of conventions will help keep things tidy:
+
+-   Follow the naming pattern: `valid_*.xlsx` or `invalid_<reason>.xlsx`
+
+-   Update the table above with a description of the expected outcome
+
+-   Ensure files follow the official template unless intentionally breaking it
+
+## Data sensitivity
+
+These test files must contain **synthetic** data only. No real submissions or real-world data to be used.
