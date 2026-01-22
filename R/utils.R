@@ -10,7 +10,14 @@
 #'
 #' @noRd
 render_readme <- function() {
+  # main readme file for the project
   rmarkdown::render("README.Rmd", output_format = "md_document")
+
+  # test files readme
+  rmarkdown::render(
+    input = here::here("tests", "input", "README.Rmd"),
+    output_format = "md_document"
+  )
 }
 
 #' Generates a hex sticker
