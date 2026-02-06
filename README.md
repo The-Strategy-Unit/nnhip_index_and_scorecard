@@ -60,6 +60,10 @@ one step:
 Once dependencies are installed, you can run the scripts in the R/
 directory as needed for data processing and analysis.
 
+## Links to other project documentation
+
+[Test files README](tests/input/README.md)
+
 [1] For an introduction to what neighbourhood health involves, please
 see:
 <https://www.strategyunitwm.nhs.uk/news/strategy-unit-contribution-neighbourhood-health>,

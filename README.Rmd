@@ -63,3 +63,7 @@ devtools::install_deps()
 ```
 
 Once dependencies are installed, you can run the scripts in the R/ directory as needed for data processing and analysis.
+
+## Links to other project documentation
+
+[Test files README](tests/input/README.md)
