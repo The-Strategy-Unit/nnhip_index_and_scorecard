@@ -20,6 +20,7 @@ Imports:
     AzureStor,
     cli,
     dplyr,
+    fs,
     gex (>= 0.2.2),
     glue,
     here,
