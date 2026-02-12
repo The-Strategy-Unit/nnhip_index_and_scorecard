@@ -24,9 +24,12 @@ Imports:
     gex (>= 0.2.2),
     glue,
     here,
+    janitor,
     png,
     purrr,
+    readxl,
     rmarkdown,
-    tibble
+    tibble,
+    tidyr
 Remotes: 
     matt-dray/gex
