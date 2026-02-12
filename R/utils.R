@@ -159,10 +159,10 @@ get_su_lakemart_parquet_file <- function(str_file_pattern = "") {
   # get the SAS for the relevant data, r = read access, w = write access
   # az_sas <- vault$secrets$get(glue::glue("alp-{container}-StrategyUnit-r"))
   az_sas <- tryCatch(
-    vault$secret$get(sas_nm),
+    vault$secrets$get(sas_nm),
     error = function(e) {
       cli::cli_abort(
-        "Could not retrieve SAS token {.val {sas_name}} from Key Vault.
+        "Could not retrieve SAS token {.val {sas_nm}} from Key Vault.
         Please ensure the secret exists and you have access. \n{e$message}"
       )
     }
