@@ -2,30 +2,39 @@
 # tidyverse obviously
 # read_xlsx
 
+library("tidyverse")
+library("stridngr")
+library("readxl")
 
 # check if all files are .xlsx
-Check_Files1a <- function(){
+Check_Files1a <- function(path_name = "tests/input/valid"){
     
-  all_files <- list.files(path = "submissions")
-  xlsx_files <- list.files(path = "submissions", 
+  if( file.exists(path_name) == FALSE){
+    message("Name of folder is inaccurate")} else{}
+  
+  all_files <- list.files(path = path_name)
+  xlsx_files <- list.files(path = path_name, 
                            pattern = ".xlsx")
   
   if( length(all_files) == length(xlsx_files)){
     message(paste("There are", length(xlsx_files),"xlsx files", 
-                  "in the submissions folder."))
+                  "in the relevant folder."))
   } else {
     message(paste("There are", length(xlsx_files),"xlsx files", 
                   "and", length(all_files)-length(xlsx_files), "other files",
-                  "in the submission folder."))
+                  "in the relevant folder."))
     message(paste("All non-xlsx files are listed below:"))
-    message(all_files[(all_files %in% xlsx_files) == FALSE])
+    message(paste(all_files[(all_files %in% xlsx_files) == FALSE], 
+                          collapse = "\n"))
+            
   }
-  
+
 }
 
 # check if all .xlsx files can be imported 
-Check_Files1b <- function(){
-  xlsx_files <- list.files(path = "submissions", 
+Check_Files1b <- function(path_name = "tests/input/valid"){
+  
+  xlsx_files <- list.files(path = path_name, 
                            pattern = ".xlsx")
   
   tbl <- tibble(
@@ -36,7 +45,7 @@ Check_Files1b <- function(){
     
     try(
       d <- readxl::read_xlsx(
-        path = paste0("submissions/", xlsx_files[j])) |> 
+        path = paste0(path_name, "/", xlsx_files[j])) |> 
         suppressMessages(), 
       silent = TRUE)
     
@@ -56,70 +65,442 @@ Check_Files1b <- function(){
     message("All .xlsx files can be imported")
   } else {
     message("The following .xlsx files cannot be imported:")
-    message(cannot_import$filename)
+    message(paste(cannot_import$filename, collapse = "\n"))
     
   }
+  
+  importable_xlsx_files <- tbl |> 
+    subset(import_success == TRUE) |> 
+    select(filename)
+  importable_xlsx_filenames <-  importable_xlsx_files$filename
+  
+  assign("importable_xlsx_filenames", 
+         importable_xlsx_filenames, 
+         envir = globalenv()) 
 }
 
 # check if all .xlsx files have an instruction and submission sheet
-Check_Files2 <- function(){
+Check_Files2 <- function(path_name = "tests/input/valid", 
+                         assign_valid_sheets = TRUE, 
+                         importable_xlsx_files = importable_xlsx_filenames){
 
-xlsx_files <- list.files(path = "submissions", 
-                         pattern = ".xlsx")
-
-tbl <- tibble(
-  row = 1:1:length(xlsx_files),
+  xlsx_files <- list.files(path = path_name, 
+                           pattern = ".xlsx")
+  
+  importable_list <- xlsx_files %in% importable_xlsx_files
+  
+tbl0 <- tibble(
+  row = 1:length(xlsx_files),
   excel_filename = xlsx_files)
 
-tbl <- tbl |> 
+tbl <- tbl0 |> 
+  mutate(full_filename = paste0(path_name,"/",tbl0$excel_filename), 
+         can_be_imported = importable_list) |> 
   mutate(
-    full_filename = paste0("submissions/",tbl$excel_filename),
     instruction_sheet = NA, 
-    submission_sheet = NA)
+    submission_sheet = NA) 
 
-for (j in 1:nrow(tbl) ){
+# tbl of files to check the sheets of
+tbl2 <- tbl |> 
+  subset(can_be_imported == TRUE)
+
+# for loop going through the importable files and checking if appropriate sheets exist
+for (j in 1:nrow(tbl2) ){
   
-  tbl$instruction_sheet[j] = "Instructions" %in% readxl::excel_sheets(tbl$full_filename[j]) 
-  tbl$submission_sheet[j] = "SubmissionTemplate" %in% readxl::excel_sheets(tbl$full_filename[j])
+  tbl2$instruction_sheet[j] = "Instructions" %in% readxl::excel_sheets(tbl2$full_filename[j]) 
+  tbl2$submission_sheet[j] = "SubmissionTemplate" %in% readxl::excel_sheets(tbl2$full_filename[j])
 }
 
-no_instructions <- tbl |> 
+# define the files with missing sheets
+no_instructions <- tbl2 |> 
   subset(instruction_sheet == FALSE) |> 
   select(excel_filename)
-no_submissions <- tbl |> 
+no_submissions <- tbl2 |> 
   subset(submission_sheet == FALSE) |> 
   select(excel_filename)
 
-if (all(tbl$instruction_sheet) == TRUE & all(tbl$submission_sheet) == TRUE){
-  message("All .xlsx files have appropriately named sheets") 
+# print out messages based on which sheets are present or missing 
+if (all(tbl2$instruction_sheet) == TRUE & all(tbl2$submission_sheet) == TRUE){
+  message("All checked .xlsx files have appropriately named instruction and submission sheets") 
 } else{
   
-  if (all(tbl$instruction_sheet) == TRUE) {
-    message("No .xlsx files are missing instruction sheets")
-  } else if (all(tbl$instruction_sheet) == FALSE) {
-    message("The following .xlsx files are missing instruction sheets:")
-    message(no_instructions)
+  if (all(tbl2$instruction_sheet) == TRUE) {
+    message("All checked .xlsx files have an instruction sheet")
+  } else if (all(tbl2$instruction_sheet) == FALSE) {
+    message("The following checked .xlsx files are missing an instruction sheet:")
+    message(paste(no_instructions$excel_filename, collapse = "\n"))
   } else {"Some other error"}
   
   message(" ")
   
-  if (all(tbl$submission_sheet) == TRUE) {
-    message("No .xlsx files are missing submission sheets")
-  } else if (all(tbl$submission_sheet) == FALSE) {
-    message("The following .xlsx files are missing submission sheets:")
-    message(no_submissions)
+  if (all(tbl2$submission_sheet) == TRUE) {
+    message("All checked. xlsx files have a submission sheet")
+  } else if (all(tbl2$submission_sheet) == FALSE) {
+    message("The following checked .xlsx files are missing a submission sheet:")
+    message(paste(no_submissions$excel_filename, collapse = "\n"))
   } else {"Some other error"}
   
 }
  
+# rejoin the tbl of checkable files (with info on sheet presence) to uncheckable files
+tbl3 <- left_join(
+  x = 
+    # need to drop the blank values from the cols on whether sheets exist
+    tbl |> 
+      select(row, excel_filename, full_filename, can_be_imported), 
+  y = tbl2)  |> 
+  suppressMessages()
+if (assign_valid_sheets == TRUE){ assign("valid_submissions", tbl3, envir = globalenv()) 
+  } else{ return(tbl3)}
+}
+
+# check is all legit files have legitimate names and periods
+# also check for duplicates
+Check_Files3 <- function(valid_submission_names = valid_submissions ,
+                         path_name = "tests/input/valid",
+                         assign_valid_sheets = TRUE, 
+                         lookup_name = "legitimate_values.xlsx"){
+  
+  # lookup of possible values
+  legitimate_values <- readxl::read_xlsx(lookup_name) |> 
+    mutate(Period = zoo::as.yearmon(Month))
+  
+  # actual xlsx files to be checked
+  xlsx_files <- subset(
+    valid_submission_names ,
+    instruction_sheet == TRUE & submission_sheet == TRUE)$excel_filename
+  
+  # create basic table which can record whether basic details are valid
+  # only covers actual xlsx files which to be checked
+  check_instr <- tibble(
+    excel_filename = xlsx_files, 
+    valid_place = NA, 
+    valid_period = NA, 
+    place = NA, 
+    period = zoo::as.yearmon(NA))
+  
+  # for loop which updates the table of legit files with whether name and period is valid
+  for (j in 1:length(xlsx_files) ){
+    
+    # extract sheet 1 for name reasons
+    sheet1 <- readxl::read_xlsx(
+      path = paste0(path_name, "/",xlsx_files[j]), 
+      sheet = "Instructions", 
+      skip = 0) |> 
+      suppressMessages()
+    
+    # add in place and period
+    d2 <- tibble(
+      Place = sheet1[5,2]$...2, 
+      Period = sheet1[6,2]$...2) |> 
+      mutate(Period = zoo::as.yearmon(
+        x = as.Date(x = as.numeric(Period), 
+                    origin = "1899-12-30")
+      ))
+    
+    check_instr$valid_place[j] = d2$Place %in% subset(legitimate_values, is.na(Project_name) == FALSE)$Project_name 
+    check_instr$valid_period[j] = d2$Period %in% subset(legitimate_values, is.na(Period) == FALSE)$Period
+    
+    check_instr$place[j] = d2$Place 
+    check_instr$period[j] = zoo::as.yearmon(d2$Period)
+    
+  }
+  
+  valid_submission_names <- left_join(
+    x = valid_submission_names, 
+    y = check_instr, 
+    by = "excel_filename") |> 
+    suppressMessages() 
+  
+  # identify duplicates in place and period
+  dup_index <- duplicated(check_instr[, c("place", "period")]) |
+               duplicated(check_instr[, c("place", "period")], fromLast = TRUE)
+  duplicates <- check_instr[dup_index, 1]
+  
+  # print off messages about whether and which files are duplictaes
+  if(nrow(duplicates) == 0) {
+    message("None of the checked .xlsx files are duplicates based on reported place and time period")
+  } else {
+    message("The following checked .xlsx files are duplicates based on reported place and time period")
+    message(paste(duplicates$excel_filename, collapse = "\n"))
+  }
+  message("")
+  
+  # add in column to the valid subm table on whether a file is a duplicate
+  valid_submission_names <- valid_submission_names |> 
+    mutate(unique = (excel_filename %in% duplicates$excel_filename) == FALSE)
+  
+  
+  check_instr <- check_instr |> 
+    select(-place, -period)
+  
+  invalid_placenames <- check_instr |> 
+    subset(valid_place == FALSE) |> 
+    select(excel_filename)
+  invalid_period <- check_instr |> 
+    subset(valid_period == FALSE) |> 
+    select(excel_filename)
+  
+  if (all(check_instr$valid_place) == TRUE & 
+      all(check_instr$valid_period) == TRUE ){
+    message("All checked .xlsx files have valid place names and time periods") 
+  } else{
+    
+    if (all(check_instr$valid_place) == TRUE) {
+      message("All checked .xlsx files have valid place names")
+    } else if (all(check_instr$valid_place) == FALSE) {
+      message("The following checked .xlsx files have invalid place names:")
+      message(paste(invalid_placenames$excel_filename, collapse = "\n"))
+    } else {"Some other error"}
+    
+    message(" ")
+    
+    if (all(check_instr$valid_period) == TRUE) {
+      message("All checked .xlsx files have valid time periods")
+    } else if (all(check_instr$valid_period) == FALSE) {
+      message("The following checked .xlsx files have invalid time periods:")
+      message(paste(invalid_period$excel_filename, collapse = "\n"))
+    } else {"Some other error"}
+    
+  }
+  
+  if (assign_valid_sheets == TRUE){ assign("valid_submissions", valid_submission_names, envir = globalenv()) 
+  } else{return(valid_submission_names)}
+}
+
+# check all column names are right
+# check all metrics are right
+Check_Files4 <- function(
+    valid_submission_names = valid_submissions ,
+    path_name = "tests/input/valid",
+    assign_valid_sheets = TRUE ,
+    lookup_name = "legitimate_values.xlsx"){
+  
+  # long lists of legit values ----
+  legit_colnames <- c("Metric Id","Metric Type","Metric Details","...4", 
+                      "18-19","20-29","30-39","40-49","50-59","60-69","70-79","80+","Not known...13", 
+                      "White","Black","Asian","Mixed" , "Other", "Not known...19", 
+                      "1","2","3", "4","5", "Not Known"  )
+  legit_metrics <- c(   "Number of new consultant-led outpatient appointments for patients in the cohort"                                                
+                        , "Number of patients in the cohort"                                                                                               
+                        , "Number of new consultant-led outpatient appointments per 1,000 patients in the cohort"                                         
+                        , "Number of follow up consultant-led outpatient appointments for patients in the cohort"                                          
+                        , "Number of patients in the cohort"                                                                                               
+                        , "Number of follow up consultant-led outpatient appointments per 1,000 patients in the cohort"                                   
+                        , "Number of  consultant-led outpatient procedures  for patients in the cohort"                                                    
+                        , "Number of patients in the cohort"                                                                                               
+                        , "Number of  consultant-led outpatient procedures per 1,000 patients in the cohort"                                             
+                        , "Number of specific acute non-elective spells in the period with a length of stay of zero days for patients in the cohort"       
+                        , "Number of patients in the cohort"                                                                                               
+                        , "Number of specific acute non-elective spells in the period with a length of stay of zero days per 1,000 patients in the cohort" 
+                        , "Number of specific acute non-elective spells in the period with a length of stay of one or more days for patients in the cohort"
+                        , "Number of patients in the cohort"                                                                                               
+                        , "Number of specific acute non-elective spells in the period with a length of one or more days per 1,000 patients in the cohort"  
+                        , "Number of inpatient bed days"                                                                                                   
+                        , "Number of patients in the cohort"                                                                                               
+                        , "Number of inpatient bed days per 1,000 patients in the cohort"                                                                  
+                        , "Number of category 1 ambulance conveyances for patients in the cohort"                                                          
+                        , "Number of patients in the cohort"                                                                                               
+                        , "Number of category 1 ambulance conveyances per 1,000 patients in the cohort"                                                    
+                        , "Number of category 2 ambulance conveyances for patients in the cohort"                                                          
+                        , "Number of patients in the cohort"                                                                                               
+                        , "Number of category 2 ambulance conveyances per 1,000 patients in the cohort"                                                    
+                        , "Number of category 3 ambulance conveyances for patients in the cohort"                                                          
+                        , "Number of patients in the cohort"                                                                                               
+                        , "Number of category 3 ambulance conveyances per 1,000 patients in the cohort"                                                    
+                        , "Number of category 4 ambulance conveyances for patients in the cohort"                                                          
+                        , "Number of patients in the cohort"                                                                                               
+                        , "Number of category 4 ambulance conveyances per 1,000 patients in the cohort"                                                    
+                        , "Number of A&E attendances at a type 1 department in the cohort"                                                                 
+                        , "Number of patients in the cohort"                                                                                               
+                        , "Number of A&E attendances at a type 1 department per 1,000 patients in the cohort"                                             
+                        , "Number of A&E attendances at an other type department in the cohort"                                                            
+                        , "Number of patients in the cohort"                                                                                               
+                        , "Number of A&E attendances at an other type department per 1,000 patients in the cohort"                                        
+                        , "Number of appointments in general    practice and Primary Care Networks"                                                           
+                        , "Number of patients in the cohort"                                                                                               
+                        , "Number of appointments in general practice and Primary Care Networks per 1,000 patients in the cohort"                          
+                        , "Number of Community Care Contacts attended for patients in the cohort"                                                          
+                        , "Number of patients in the cohort"                                                                                               
+                        , "Number of Community Care Contacts attended per 1,000 patients in the cohort"                                                    
+                        , "Number of patients on the NNHIP caseload" )
+    legit_metrics <- stringr::str_squish(legit_metrics)
+  
+  # back to actual wrangling work -----
+  
+  # actual xlsx files to be checked
+  xlsx_files <- subset(
+    valid_submission_names,
+    can_be_imported == TRUE & 
+      instruction_sheet == TRUE & 
+      submission_sheet == TRUE)$excel_filename
+  
+  # create basic table which can record whether basic details are valid
+  # only covers actual xlsx files which to be checked
+  check_subm <- tibble(
+    excel_filename = xlsx_files, 
+    valid_columns = NA, 
+    valid_metrics = NA)
+  
+  # for loop which updates the table of legit files with whether name and period is valid
+  for (j in 1:length(xlsx_files) ){
+    
+    # extract the actual dataset
+    d1 <- readxl::read_excel(
+      path = paste0(path_name, "/",xlsx_files[j]), 
+      sheet = "SubmissionTemplate" , 
+      skip = 4) |> 
+      mutate(`Metric Details` = stringr::str_squish(`Metric Details`)) |> 
+      suppressMessages() 
+    
+    valid_colnames <- all(colnames(d1) == legit_colnames) |> 
+      suppressWarnings()
+    valid_metrics1 <- all(d1$`Metric Details` == legit_metrics) |> 
+      suppressWarnings()
+    
+    check_subm$valid_columns[j] = valid_colnames
+    check_subm$valid_metrics[j] = valid_metrics1
+    
+  }
+  
+  # append info on columns and metrics to the master table
+  valid_submission_names <- left_join(
+    x = valid_submission_names, 
+    y = check_subm, 
+    by = "excel_filename") |> 
+    suppressMessages() 
+  
+  # create object for wrong columns ----
+  wrong_cols <- subset(check_subm, valid_columns == FALSE)$excel_filename
+  
+  col_errors.master <- tibble(
+    excel_filename = character(), 
+    error_type = character(), 
+    column = character())
+  
+  for (j in 1:length(wrong_cols)){
+    
+    # extract the actual dataset
+    d1 <- readxl::read_excel(
+      path = paste0(path_name, "/",wrong_cols[j]), 
+      sheet = "SubmissionTemplate" , 
+      skip = 4) |> 
+      suppressMessages()
+    
+    extra_columns <- colnames(d1)[(colnames(d1) %in% legit_colnames)==FALSE]
+    missing_columns <- legit_colnames[(legit_colnames %in% colnames(d1))==FALSE]
+    
+    col_errors <- tibble(
+      excel_filename = wrong_cols[j], 
+      error_type = c(rep(x = "extra columns", 
+                         times = length(extra_columns)), 
+                     rep(x = "missing column", 
+                         times = length(missing_columns))), 
+      column = c(extra_columns, missing_columns))
+    
+    col_errors.master <- rbind(col_errors.master, col_errors)
+  }
+  
+  if (nrow(col_errors.master)>0){
+    assign("column_errors", col_errors.master, envir = globalenv())
+  } else {}
+  
+  # create object for wrong metric ----
+  wrong_metr <-  subset(check_subm, valid_metrics == FALSE)$excel_filename
+  
+  metr_errors.master <- tibble(
+    excel_filename = character(), 
+    error_type = character(), 
+    column = character())
+  
+  for (j in 1:length(wrong_metr)){
+    
+    # extract the actual dataset
+    d1 <- readxl::read_excel(
+      path = paste0(path_name, "/",wrong_metr[j]), 
+      sheet = "SubmissionTemplate" , 
+      skip = 4) |> 
+      mutate(`Metric Details` = stringr::str_squish(`Metric Details`)) |> 
+      suppressMessages()
+    
+    extra_metrics <- d1$`Metric Details`[(d1$`Metric Details` %in% legit_metrics)==FALSE]
+    missing_metrics <- legit_metrics[(legit_metrics %in% d1$`Metric Details`)==FALSE]
+    
+    metr_errors <- tibble(
+      excel_filename = wrong_metr[j], 
+      error_type = c(rep(x = "extra metric", 
+                         times = length(extra_metrics)), 
+                     rep(x = "missing metric", 
+                         times = length(missing_metrics))), 
+      column = c(extra_metrics, missing_metrics))
+    
+    metr_errors.master <- rbind(metr_errors.master, metr_errors)
+  }
+  
+  if (nrow(metr_errors.master)>0){
+    assign("metric_errors", metr_errors.master, envir = globalenv())
+  } else {}
+  
+  # final message output ----
+  invalid_metric_names <- subset(valid_submission_names, valid_metrics == FALSE)$excel_filename
+  invalid_column_names <- subset(valid_submission_names, valid_columns == FALSE)$excel_filename
+  
+  if ( all(valid_submission_names$valid_columns) == TRUE & 
+       all(valid_submission_names$valid_metrics) == TRUE) {
+    message("All checked .xlsx files have valid column names and metrics")
+  } else {
+    
+    if (all(valid_submission_names$valid_columns) == TRUE){
+      "All checked .xlsx files have valid columns"
+    } else {
+      message("The following checked .xlsx files have invalid demographic groups:")
+      message(paste(invalid_column_names, 
+                    collapse = "\n"))}
+    
+    message("")
+    
+    if (all(valid_submission_names$valid_metrics) == TRUE){
+      "All checked .xlsx files have valid metrics"
+    } else {
+      message("The following checked .xlsx files have invalid metrics:")
+      message(paste(invalid_metric_names, collapse = "\n"))}
+    
+    message("")
+    message("For further details see the created objects")
+    
+  }
+  
+  assign("valid_submissions", valid_submission_names, envir = globalenv())
+  
 }
 
 # import all the data into three datasets (ethnicity, age, deprivation)
-Import_Data <- function(){
+Import_Data <- function(path_name = "tests/input/valid", 
+                        valid_submission_names = valid_submissions, 
+                        acceptable_valid_places = c(TRUE), 
+                        acceptable_valid_periods = c(TRUE), 
+                        acceptable_valid_unique = c(TRUE), 
+                        acceptable_valid_cols = c(TRUE), 
+                        acceptable_valid_metrics = c(TRUE) ){
   
-  b <- Sys.time()
-  xlsx_files <- list.files(path = "submissions", 
-                           pattern = ".xlsx")
+  # report a message telling people not to deviate from the default import rules
+  if (all(acceptable_valid_places, acceptable_valid_periods, acceptable_valid_unique, acceptable_valid_cols, acceptable_valid_metrics) == FALSE
+  ){message("Importing data with potentially invalid structure or features. This may lead to unexpected or mistaken results.")
+    message("")} else (message(""))
+  
+  # define which files to import
+  xlsx_files <- subset(
+    valid_submission_names,
+    can_be_imported == TRUE &
+    instruction_sheet == TRUE & submission_sheet == TRUE & 
+      
+    valid_place %in% acceptable_valid_places & 
+    valid_period %in% acceptable_valid_periods & 
+    unique %in% acceptable_valid_unique &
+      
+    valid_columns %in% acceptable_valid_cols & 
+    valid_metrics %in% acceptable_valid_metrics)$excel_filename
+    
   
   # setup blank tibbles ----
   full_ages <- tibble(
@@ -151,14 +532,14 @@ Import_Data <- function(){
     # basics for all types ----
     # extract the actual dataset
     d1 <- readxl::read_excel(
-      path = paste0("submissions/",xlsx_files[j]), 
+      path = paste0(path_name, "/",xlsx_files[j]), 
       sheet = "SubmissionTemplate" , 
       skip = 4) |> 
       suppressMessages()
     
     # extract sheet 1 for name reasons
     sheet1 <- readxl::read_xlsx(
-      path = paste0("submissions/",xlsx_files[j]), 
+      path = paste0(path_name, "/",xlsx_files[j]), 
       sheet = "Instructions", 
       skip = 0) |> 
       suppressMessages()
@@ -166,7 +547,12 @@ Import_Data <- function(){
     # add in place and period
     d2 <- d1 |> 
       mutate(Place = sheet1[5,2]$...2, 
-             Period = sheet1[6,2]$...2)
+             Period = sheet1[6,2]$...2) |> 
+      mutate(Period = zoo::as.yearmon(
+        x = as.Date(
+                x = as.numeric(Period), 
+                origin = "1899-12-30")
+        ))
     
     # just some formatting
     d3 <- d2 |> 
@@ -225,7 +611,7 @@ Import_Data <- function(){
     full_ages <- rbind(full_ages, Age_Group)
     
     # remove the unnecesary dfs
-    rm(list=setdiff(ls(), c("d3", "d5", 
+    rm(list=setdiff(ls(), c("d3", "d5", "path_name", 
                             "xlsx_files", "j", "b", 
                             "full_ages", "full_ethnic", "full_depr")))
     
@@ -265,7 +651,7 @@ Import_Data <- function(){
     full_ethnic <- rbind(full_ethnic, Ethn_Group)
     
     # remove the unnecesary dfs
-    rm(list=setdiff(ls(), c("d3", "d5", 
+    rm(list=setdiff(ls(), c("d3", "d5", "path_name", 
                             "xlsx_files", "j", "b", 
                             "full_ages", "full_ethnic", "full_depr")))
     
@@ -304,27 +690,131 @@ Import_Data <- function(){
     full_depr <- rbind(full_depr, Depr_Group)
     
     # remove the unnecesary dfs
-    rm(list=setdiff(ls(), c("d3", "d5", 
+    rm(list=setdiff(ls(), c("d3", "d5", "path_name", 
                             "xlsx_files", "j", "b", 
                             "full_ages", "full_ethnic", "full_depr")))
-    # print completed message
+    # print completed message ----
     
     message(xlsx_files[j], " completed!")
   }
   
-  a <- Sys.time()
-  message("Total import took ", 
-          round(x = as.numeric(a-b)/60, 
-                digits = 2), 
-          " minutes")
+  # assign the outputs to the global environment
+  assign(x = "age_breakdown", 
+         value = full_ages, 
+         envir = globalenv())
+  assign(x = "ethnicity_breakdown", 
+         value = full_ethnic, 
+         envir = globalenv())
+  assign(x = "deprivation_breakdown", 
+         value = full_depr, 
+         envir = globalenv())
+  
+
+}
+
+# check for NA values
+Check_Data1 <- function(age_breakdown_aggr = age_breakdown,
+                        deprivation_breakdown_aggr = deprivation_breakdown,
+                        ethnicity_breakdown_aggr = ethnicity_breakdown,
+                        print_all_NAs = TRUE,
+                        valid_submission_names = valid_submissions){
+  
+  # arguments
+  
+  
+  
+  age_NAs <- age_breakdown_aggr |> 
+    subset(is.na(Count) | is.na(Eligible_Cohort_Size))
+  
+  depr_NAs <- deprivation_breakdown_aggr |> 
+    subset(is.na(Count) | is.na(Eligible_Cohort_Size))
+  
+  ethn_NAs <- ethnicity_breakdown_aggr|> 
+    subset(is.na(Count) | is.na(Eligible_Cohort_Size))
+  
+  any_NAs <- rbind(
+    select(age_NAs, Place, Period), 
+    select(ethn_NAs, Place, Period),
+    select(depr_NAs, Place, Period)) |> 
+    unique() |> 
+    transmute(place = Place, 
+              period = Period)
+  
+  na_names <- left_join(
+    x = any_NAs, 
+    y = valid_submission_names) |> 
+    suppressMessages() |> 
+    select(excel_filename)
+  
+  if( nrow(age_NAs) == 0 & 
+      nrow(depr_NAs) == 0 & 
+      nrow(ethn_NAs) == 0 ){
+    message("There are no missing values or NAs in any of the imported datasets")
+  } else if(print_all_NAs == TRUE){
+    message("There are missing values or NAs in the following imported datasets:")
+    message(paste(na_names$excel_filename, collapse = "\n"))
+    message("")
+    message(paste0("In total there are ", 
+                   nrow(age_NAs) + nrow(depr_NAs) + nrow(ethn_NAs), 
+                   " missing values or NAs across all the imported datasets"))
+    message("See created objects for further details")
+    
+    assign("age_NAs", age_NAs, envir = globalenv())
+    assign("ethnicity_NAs", ethn_NAs, envir = globalenv())
+    assign("deprivation_NAs", depr_NAs, envir = globalenv())
+  } else {
+    message("There are missing values or NAs in some of the imported datasets:")
+    message("")
+    message(paste0("In total there are ", 
+                   nrow(age_NAs) + nrow(depr_NAs) + nrow(ethn_NAs), 
+                   " missing values or NAs across all the imported datasets"))
+    message("See created objects for further details")
+    
+    assign("age_NAs", age_NAs, envir = globalenv())
+    assign("ethnicity_NAs", ethn_NAs, envir = globalenv())
+    assign("deprivation_NAs", depr_NAs, envir = globalenv())
+  }
+  
+
   
 }
 
-# still need to check the missing data
-# still need to do some reformatting, i.e. period in date format
-# check the numbers even add up
 
-Check_Files1a()
-Check_Files1b()
-Check_Files2()
-Import_Data()
+# put it all together
+Run_Full_Process <- function(file_location = "tests/input/valid"){
+  
+  
+  
+  a <- Sys.time()
+  
+  message("--- Checking file format is .xlsx ---")
+  Check_Files1a(path_name = file_location)
+  message("")
+  message("--- Checking .xlsx files can be imported ---")
+  Check_Files1b(path_name = file_location)
+  message("")
+  message("--- Checking .xlsx files have necessary sheets ---")
+  Check_Files2(path_name = file_location)
+  message("")
+  message("--- Checking .xlsx files cover valid places and time periods ---")
+  Check_Files3(path_name = file_location)
+  message("")
+  message("--- Checking .xlsx files include valid demographics and metrics ---")
+  Check_Files4(path_name = file_location)
+  message("")
+  
+  message("--- Importing data for valid submissions ---")
+  Import_Data(path_name = file_location)
+  message("")
+  
+  message("--- Checking imported data for NAs ----")
+  Check_Data1() 
+  message("")
+  
+  b <- Sys.time()
+  elapsed = as.numeric(b-a)
+  message(paste("Full process took ", 
+                round(elapsed/60, 1), 
+                " minutes"))
+  
+}
