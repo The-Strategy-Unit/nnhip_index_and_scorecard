@@ -15,8 +15,21 @@ Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports: 
+    arrow,
+    AzureKeyVault,
+    AzureStor,
+    cli,
     dplyr,
+    fs,
     gex (>= 0.2.2),
-    rmarkdown
-Remotes:  
+    glue,
+    here,
+    janitor,
+    png,
+    purrr,
+    readxl,
+    rmarkdown,
+    tibble,
+    tidyr
+Remotes: 
     matt-dray/gex
