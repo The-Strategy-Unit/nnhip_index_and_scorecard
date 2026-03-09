@@ -29,6 +29,7 @@ Imports:
     purrr,
     readxl,
     rmarkdown,
+    stringr,
     tibble,
     tidyr
 Remotes: 
