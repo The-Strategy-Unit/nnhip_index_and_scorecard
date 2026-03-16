@@ -18,19 +18,27 @@ Imports:
     arrow,
     AzureKeyVault,
     AzureStor,
+    brand.yml,
+    bslib,
     cli,
+    dataui (>= 0.0.1),
     dplyr,
     fs,
     gex (>= 0.2.2),
     glue,
     here,
     janitor,
+    plotly,
     png,
     purrr,
+    reactable,
+    reactablefmtr,
     readxl,
     rmarkdown,
+    shiny,
     stringr,
     tibble,
     tidyr
 Remotes: 
-    matt-dray/gex
+    matt-dray/gex,
+    timelyportfolio/dataui
