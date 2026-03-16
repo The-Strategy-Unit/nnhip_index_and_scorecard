@@ -1,0 +1,178 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
+
+body {
+  font-family: 'Roboto', Arial, sans-serif;
+}
+
+:root {
+  --gap: 24px;
+  --content-gap: 20px;
+  --nav-width: 1024px;
+  --main-width: 720px;
+  --header-height: 60px;
+  --footer-height: 60px;
+  --radius: 8px;
+
+  /* SU Brand Palette */
+  --su-dark-grey: #959595;
+  --su-charcoal: #2c2825;
+  --su-yellow: #f9bd07;
+  --su-white: #f5f4f3;
+  --su-blue: #5881c1;
+
+  /* Light mode colors */
+  --color-foreground: var(--su-charcoal);
+  --color-background: var(--su-white);
+  --color-primary: var(--su-yellow);
+  --color-secondary: var(--su-dark-grey);
+  --color-info: var(--su-blue);
+
+  --link-color: var(--color-info);
+}
+
+.dark {
+  /* Dark mode overrides */
+  --color-foreground: var(--su-white);
+  --color-background: var(--su-charcoal);
+  --color-primary: var(--su-yellow);
+  --color-secondary: var(--su-white);
+  --color-info: var(--su-blue);
+
+  --link-color: var(--color-primary);
+}
+
+body,
+.content,
+.markdown,
+.main-content {
+  color: var(--color-foreground) !important;
+  background: var(--color-background) !important;
+}
+
+.list {
+  background: var(--color-background);
+}
+
+.center {
+  text-align: center;
+}
+
+.home h1, .home h2, .home h3 {
+  text-align: center;
+}
+
+/* SU brand link and text colors */
+.content a,
+.markdown a,
+.main-content a,
+a {
+  color: var(--su-blue) !important;
+  text-decoration: underline;
+  transition: color 0.2s;
+}
+
+.content a:hover,
+.markdown a:hover,
+.main-content a:hover,
+a:hover {
+  color: var(--su-yellow) !important;
+}
+
+/* Navbar styles */
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 20px;
+  height: var(--header-height);
+  background: var(--color-primary);
+  border-bottom: 1px solid var(--color-secondary);
+}
+.dark .navbar {
+  background: var(--su-charcoal);
+  border-bottom: 1px solid var(--color-primary);
+}
+
+.navbar-buttons {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.nav-btn {
+  padding: 4px 10px;
+  border-radius: 3px;
+  border: none;
+  background: var(--color-primary);
+  color: var(--color-foreground);
+  font-weight: 400;
+  font-size: 0.95rem;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+.nav-btn:hover {
+  background: var(--color-secondary);
+}
+
+.github-icon {
+  background: none;
+  padding: 0 6px;
+  color: var(--color-foreground);
+  display: flex;
+  align-items: center;
+  border: none;
+}
+.github-icon:hover {
+  color: var(--color-info);
+  background: none;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  height: var(--header-height);
+}
+
+.logo-image {
+  height: 38px;
+  width: auto;
+  display: block;
+  margin-right: 12px;
+}
+
+/* TOC styles */
+.toc, .TableOfContents {
+  background: var(--su-white);
+  border-radius: 8px;
+  padding: 1em;
+  border: 1px solid var(--su-blue);
+}
+
+.toc a, .TableOfContents a {
+  color: var(--su-blue);
+  font-weight: 500;
+  text-decoration: underline;
+  transition: color 0.2s;
+}
+
+.toc a:hover, .TableOfContents a:hover {
+  color: var(--su-yellow);
+  text-decoration: underline;
+}
+
+/* Dark mode overrides for TOC */
+.dark .toc,
+.dark .TableOfContents {
+  background: var(--su-charcoal);
+  border-color: var(--su-yellow);
+}
+
+.dark .toc a,
+.dark .TableOfContents a {
+  color: var(--su-yellow);
+}
+
+.dark .toc a:hover,
+.dark .TableOfContents a:hover {
+  color: var(--su-blue);
+}
