@@ -18,17 +18,36 @@ ui <- function(request) {
     # national section --------------------------------------------------------
     bslib::nav_panel(
       title = "National view",
+      icon = bsicons::bs_icon("map"),
       bslib::page_sidebar(
         # sidebar ----
-        sidebar = bslib::sidebar(),
+        sidebar = bslib::sidebar(
+          # add some branding
+          shiny::hr(),
+          shiny::tags$div(
+            style = "text-align:center; padding: 10px 0;",
+            shiny::tags$img(
+              src = "logos/logo_black.svg",
+              style = "max-width: 120px; height: auto"
+            )
+          )
+        ),
         # main ----
-        "National main"
+        bslib::navset_card_tab(
+          id = "national_tabs",
+          bslib::nav_panel(
+            title = "Overview",
+            icon = bsicons::bs_icon("table"),
+            bslib::card_body(reactable::reactableOutput("national_table")),
+          )
+        )
       )
     ),
 
     # place section -----------------------------------------------------------
     bslib::nav_panel(
       title = "Place view",
+      icon = bsicons::bs_icon("pin-map"),
       bslib::page_sidebar(
         # sidebar ----
         sidebar = bslib::sidebar(
@@ -85,10 +104,12 @@ ui <- function(request) {
 
             bslib::nav_panel(
               title = "Dashboard table",
+              icon = bsicons::bs_icon("table"),
               bslib::card_body(reactable::reactableOutput("place_table")),
             ),
             bslib::nav_panel(
               title = "Funnel plot",
+              icon = bsicons::bs_icon("funnel"),
               plotly::plotlyOutput("place_funnel", height = "100%")
             )
           )

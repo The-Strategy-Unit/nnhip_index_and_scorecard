@@ -26,7 +26,7 @@
 #' )
 #' }
 #' @noRd
-get_place_month_summary <- function(df, selected_month, selected_place) {
+get_place_month_summary <- function(df, selected_month, selected_place = NULL) {
   df_return <-
     df |>
     dplyr::filter(
@@ -42,6 +42,7 @@ get_place_month_summary <- function(df, selected_month, selected_place) {
   # return the result
   return(df_return)
 }
+
 
 #' Summarise average metric values for a given place
 #'
@@ -63,19 +64,26 @@ get_place_month_summary <- function(df, selected_month, selected_place) {
 #'   selected_place = "West Essex"
 #' )
 #' }
-summarise_place_averages <- function(df, selected_place) {
-  # get a common df with most filters in place
+summarise_averages <- function(df, selected_place = NULL) {
+  # filter to total breakdown and remove pre-calculated rates
   df_temp <-
     df |>
     dplyr::filter(
-      place == selected_place,
       breakdown_dimension == "Total",
       measure != "rate_per_1000" # remove pre-calculated rates
     )
 
+  # if a place is selected then filter to that place
+  if (!is.null(selected_place)) {
+    df_temp <-
+      df_temp |>
+      dplyr::filter(place == selected_place)
+  }
+
   # outcome metrics: compute rate_per_1000 from summed numerator + denominator
   df_outcomes <-
     df_temp |>
+    dplyr::filter(metric_id != "P1") |>
     dplyr::summarise(
       value = sum(value, na.rm = TRUE),
       .by = c(metric_id, metric_details, measure)
@@ -93,10 +101,7 @@ summarise_place_averages <- function(df, selected_place) {
       values_to = "value"
     ) |>
     # remove numerator and denominator from all outcome measures
-    dplyr::filter(
-      metric_id != "P1",
-      measure == "rate_per_1000"
-    )
+    dplyr::filter(measure == "rate_per_1000")
 
   # process metric P1: average number of patients
   df_process <-
@@ -191,7 +196,7 @@ get_sparkline_data <- function(df, selected_place) {
 #' This function acts as a data orchestrator for the dashboard. It relies
 #' on:
 #' - `get_place_month_summary()` to extract month-specific values,
-#' - `summarise_place_averages()` to compute long-term averages,
+#' - `summarise_averages()` to compute long-term averages,
 #' - `get_sparkline_data()` to generate sparkline-ready trend data
 #'
 #' Joins are performed on `metric_details`, and differences are computed
@@ -214,7 +219,7 @@ get_dashboard_data <- function(df, month_latest, month_prev, place_selected) {
   )
 
   # get average dashboard data
-  df_dash_average <- summarise_place_averages(
+  df_dash_average <- summarise_averages(
     df = df,
     selected_place = place_selected
   )
@@ -747,7 +752,7 @@ get_funnel_plot <- function(
       title = str_title,
       font = list(family = "Roboto, Arial, sans-serif", size = 16),
       showlegend = FALSE,
-      margin = list(l = 40, r = 40, t = 60, b = 60)
+      margin = list(l = 40, r = 40, t = 100, b = 60)
     ) |>
     plotly::config(displaylogo = FALSE) |>
     plotly::animation_opts(
@@ -758,4 +763,392 @@ get_funnel_plot <- function(
 
   # return the plot
   return(p)
+}
+
+#' Compute national monthly averages for outcome and process metrics
+#'
+#' @description
+#' This function takes a dataset of metric values and produces a national-level
+#' monthly summary. It handles outcome metrics by recomputing rates from raw
+#' numerators and denominators, and it handles process metrics (specifically
+#' metric `P1`) by calculating the average number of patients.
+#'
+#' @details
+#' The function performs three main operations:
+#' **1. Pre-processing**
+#' - Filters the dataset to include only rows where `breakdown_dimension == "Total"`.
+#' - Removes any rows where `measure == "rate_per_1000"` to avoid using
+#'   pre-calculated rates.
+#'
+#' **2. Outcome metrics (all except `P1`)**
+#' - Sums numerator (`count`) and denominator (`patients`) values by `metric_id`,
+#'   `metric_details`, `measure`, `month_zoo`, and `month`
+#' - Reshapes the data wide to compute a fresh `rate_per_1000` using
+#' `rate_per_1000 = count / patients * 1000`.
+#' - Reshapes back to long format and keeps only the calculated rate.
+#'
+#' **3. Process metric (`P1`)**
+#' - Filters to metric `P1` and measure `patients`
+#' - Computes the *mean* number of patients per month at national level
+#'
+#' The final output is a combined dataset containing:
+#' - One row per month per outcome metric with a calculated `rate_per_1000`.
+#' - One row per month for metric `P1` with the average number of patients.
+#'
+#' @param df A tibble or data frame containing metric data.
+#'
+#' @returns A tibble with national-level monthly averages and calculated
+#' outcome rates. Columns include:
+#' - `metric_id`,
+#' - `metric_details`,
+#' - `measure`,
+#' - `value`,
+#' - `month_zoo`,
+#' - `month`
+#'
+#' @examples
+#' \dontrun{
+#' national_monthly_averages(df)
+#' }
+national_monthly_averages <- function(df) {
+  # filter to total breakdown and remove pre-calculated rates
+  df_temp <-
+    df |>
+    dplyr::filter(
+      breakdown_dimension == "Total",
+      measure != "rate_per_1000" # remove pre-calculated rates
+    )
+
+  # outcome metrics: compute rate_per_1000 from summed numerator + denominator
+  df_outcomes <-
+    df_temp |>
+    dplyr::filter(metric_id != "P1") |>
+    dplyr::summarise(
+      value = sum(value, na.rm = TRUE),
+      .by = c(metric_id, metric_details, measure, month_zoo, month)
+    ) |>
+    # work out the rate
+    tidyr::pivot_wider(
+      names_from = measure,
+      values_from = value
+    ) |>
+    dplyr::mutate(rate_per_1000 = (count / patients) * 1000) |>
+    # collapse back to measure | value columns
+    tidyr::pivot_longer(
+      cols = c(patients, count, rate_per_1000),
+      names_to = "measure",
+      values_to = "value"
+    ) |>
+    # remove numerator and denominator from all outcome measures
+    dplyr::filter(measure == "rate_per_1000")
+
+  # process metric P1: average number of patients
+  df_process <-
+    df_temp |>
+    dplyr::filter(
+      metric_id == "P1",
+      measure == "patients"
+    ) |>
+    # summarise for the average
+    dplyr::summarise(
+      value = mean(value, na.rm = TRUE),
+      .by = c(metric_id, metric_details, measure, month_zoo, month)
+    )
+
+  # combine rows together
+  df_return <- dplyr::bind_rows(df_outcomes, df_process)
+
+  return(df_return)
+}
+
+#' Prepare national-level data for funnel plotting
+#'
+#' @description
+#' This function filters a dataset to a selected month and computes the
+#' Wilson-based 95% and 99% funnel plot limits for national-level metrics.
+#' It returns one row per metric with numerator, denominator, rate, confidence
+#' limits and a categorical marker indicating whether the point lies inside or
+#' outside the funnel boundaries.
+#'
+#' @details
+#' The function performs the following steps:
+#'
+#' **1. Filter and reshape**
+#' - Keeps only rows for the selected month and the `"Total"` breakdown.
+#' - Pivots the data wider so that `patients`, `count` and `rate_per_1000`
+#'   appear on the same row.
+#'
+#' **2. Compute Wilson confidence limits**
+#' - Calculates the overall national proportion
+#' - Computes Wilson centres and half-widths for 95% and 99% limits
+#' - Converts limits into rates per 1000
+#'
+#' **3. Categorise each metric**
+#' - Labels each point as `"Outside 99%"`, `"Outside 95%"`, or `"Within 95%"`
+#'   depending on where its rate falls relative to the funnel limits.
+#'
+#' @param df A tibble or data frame containing metric data.
+#' @param month_selected A zoo::yearmon object indicating which month to extract for the funnel plot
+#'
+#' @returns A data frame with one row per metric containing:
+#' - numerator, denominator and rate
+#' - Wilson 95% and 99% limits
+#' - marker category for plotting
+#'
+#' @examples
+#' \dontrun{
+#' get_data_for_funnel_plot_national(
+#'   df = df,
+#'   month_selected = zoo::as.yearmon("2027-03"))
+#' }
+get_data_for_funnel_plot_national <- function(df, month_selected) {
+  df_return <-
+    df |>
+    # filter the data for the specified month and metric
+    dplyr::filter(
+      month_zoo == month_selected,
+      breakdown_dimension == "Total"
+    ) |>
+    # summarise for each metric and measure combination
+    dplyr::summarise(
+      value = sum(value, na.rm = TRUE),
+      .by = c(place, metric_details, measure)
+    ) |>
+    # pivot wider to put the numerator / denominator / rate on the same row
+    tidyr::pivot_wider(
+      names_from = measure,
+      values_from = value
+    ) |>
+    # work out some measures
+    dplyr::mutate(
+      .by = c(metric_details),
+
+      # overall proportion
+      overall_p = sum(count, na.rm = TRUE) / sum(patients, na.rm = TRUE),
+
+      # z-values
+      z95 = 1.96,
+      z99 = 2.576,
+
+      # Wilson centre adjustments
+      centre_95 = (overall_p + (z95^2) / (2 * patients)) /
+        (1 + (z95^2) / patients),
+      centre_99 = (overall_p + (z99^2) / (2 * patients)) /
+        (1 + (z99^2) / patients),
+
+      # Wilson half-widths
+      hw_95 = (z95 / (1 + (z95^2) / patients)) *
+        sqrt(
+          (overall_p * (1 - overall_p) / patients) + (z95^2) / (4 * patients^2)
+        ),
+      hw_99 = (z99 / (1 + (z99^2) / patients)) *
+        sqrt(
+          (overall_p * (1 - overall_p) / patients) + (z99^2) / (4 * patients^2)
+        ),
+
+      # final limits (multiplied by 1000 to get rate per 1000)
+      lower_95 = (centre_95 - hw_95) * 1000,
+      upper_95 = (centre_95 + hw_95) * 1000,
+      lower_99 = (centre_99 - hw_99) * 1000,
+      upper_99 = (centre_99 + hw_99) * 1000,
+
+      # categorise points based on their position relative to confidence limits
+      marker_category = dplyr::case_when(
+        !(dplyr::between(
+          x = rate_per_1000,
+          left = lower_99,
+          right = upper_99
+        )) ~ "Outside 99%",
+        !(dplyr::between(
+          x = rate_per_1000,
+          left = lower_95,
+          right = upper_95
+        )) ~ "Outside 95%",
+        .default = "Within 95%"
+      ) |>
+        factor(levels = c("Outside 99%", "Outside 95%", "Within 95%")),
+    )
+
+  return(df_return)
+}
+
+
+#' Create dashboard-ready national summary data for the latest and previous months
+#'
+#' @description
+#' This function prepares a national-level dataset suitable for use in the "National View" dashboard. It combines several components:
+#' - **Monthly averages** for each metric (latest and previous month)
+#' - **Month-to-month change** in national values
+#' - **Funnel-plot variation indicators**, proportion of places outside the 95% and 99% limits
+#' - **Trendline data**, stored as a list-column of ordered values for each metric
+#'
+#'
+#' @param df T
+#' @param month_latest
+#' @param month_prev
+#'
+#' @returns Tibble with one row per metric, containing all dashboard-ready summary fields.
+#'
+#' @export
+#' @examples
+get_national_dashboard_data <- function(df, month_latest, month_prev) {
+  # get a summary of averages each month
+  df_averages <- national_monthly_averages(df = df)
+
+  # get dashboard data for current month
+  df_dash_month_curr <-
+    df_averages |>
+    dplyr::filter(month_zoo == month_latest)
+
+  # get dashboard data for previous month
+  df_dash_month_prev <-
+    df_averages |>
+    dplyr::filter(month_zoo == month_prev)
+
+  # get funnel plot data (to work out numbers outside of limits)
+  df_funnel <-
+    get_data_for_funnel_plot_national(df = df, month_selected = month_latest) |>
+    # get the number of places in total and those outside the limits
+    dplyr::summarise(
+      place_count = dplyr::n_distinct(place, na.rm = TRUE),
+      place_outside_limit = dplyr::n_distinct(
+        place[marker_category %in% c("Outside 95%", "Outside 99%")],
+        na.rm = TRUE
+      ),
+      .by = c(metric_details)
+    ) |>
+    # work out the proportion of places outside of limit
+    dplyr::mutate(
+      place_outside_limit_rate = place_outside_limit / place_count
+    )
+
+  # get the trendline data
+  df_trendline <-
+    df_averages |>
+    dplyr::select(metric_id, metric_details, measure, month_zoo, value) |>
+    dplyr::summarise(
+      trendline = list(value[order(month_zoo)]),
+      .by = c(metric_id, metric_details, measure)
+    )
+
+  # combine the data
+  df_dashboard <-
+    df_dash_month_curr |>
+    dplyr::select(metric_details, month_current = value) |>
+    # add in previous month's values and work out the difference
+    dplyr::left_join(
+      y = df_dash_month_prev |>
+        dplyr::select(metric_details, month_previous = value),
+      by = dplyr::join_by(x$metric_details == y$metric_details)
+    ) |>
+    dplyr::mutate(
+      month_diff = month_current - month_previous
+    ) |>
+    # add in funnel data
+    dplyr::left_join(
+      y = df_funnel |>
+        dplyr::select(metric_details, place_outside_limit_rate),
+      by = dplyr::join_by(x$metric_details == y$metric_details)
+    ) |>
+    # add in trendline
+    dplyr::left_join(
+      y = df_trendline |>
+        dplyr::select(metric_details, trendline),
+      by = dplyr::join_by(x$metric_details == y$metric_details)
+    )
+
+  return(df_dashboard)
+}
+
+# get_national_dashboard_data(
+#   df = df,
+#   month_latest = zoo::as.yearmon("2027-03"),
+#   month_prev = zoo::as.yearmon("2027-02")
+# )
+
+display_dashboard_national <- function(
+  df,
+  month_latest,
+  month_prev
+) {
+  # get the data
+  df_dashboard <- get_national_dashboard_data(
+    df = df,
+    month_latest = month_latest,
+    month_prev = month_prev
+  )
+
+  # produce as a reactable table dashboard
+  suppressWarnings(
+    df_dashboard |>
+      reactable::reactable(
+        pagination = FALSE,
+        searchable = TRUE,
+        defaultColDef = reactable::colDef(
+          maxWidth = 100
+        ),
+        columns = list(
+          metric_details = reactable::colDef(
+            name = "Metric",
+            minWidth = 250,
+            maxWidth = 1000
+          ),
+          month_current = reactable::colDef(
+            name = "This month",
+            format = reactable::colFormat(digits = 1)
+          ),
+          month_previous = reactable::colDef(
+            name = "Last month",
+            format = reactable::colFormat(digits = 1)
+          ),
+          month_diff = reactable::colDef(
+            name = "Difference",
+            format = reactable::colFormat(digits = 1),
+            cell = arrow_cell,
+            html = TRUE,
+            style = function(value) {
+              list(
+                borderRight = "0.5px solid #f5f6fa",
+                paddingRight = "8px"
+              )
+            },
+            headerStyle = list(
+              borderRight = "0.5px solid #f5f6fa"
+            )
+          ),
+          place_outside_limit_rate = reactable::colDef(
+            name = "Outside limit rate",
+            cell = reactablefmtr::data_bars(
+              data = df_dashboard,
+              fill_color = "#eec0e0",
+              background = "#f5f6fa",
+              text_position = "inside-base",
+              number_fmt = scales::percent_format(accuracy = 1),
+              max_value = 1,
+              min_value = 0
+            ),
+            align = "left"
+          ),
+          trendline = reactable::colDef(
+            name = "Trend",
+            minWidth = 150,
+            maxWidth = 1000,
+            cell = reactablefmtr::react_sparkline(
+              data = df_dashboard,
+              show_area = TRUE,
+              line_color = "#5881c1",
+              highlight_points = reactablefmtr::highlight_points(
+                min = "#686f73",
+                max = "#686f73"
+              )
+            )
+          )
+        ),
+        theme = reactable::reactableTheme(
+          style = list(
+            fontFamily = "Roboto, Arial, sans-serif"
+          )
+        )
+      )
+  )
 }

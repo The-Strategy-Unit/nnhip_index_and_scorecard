@@ -47,14 +47,6 @@ server <- function(input, output, session) {
   })
 
   # prepare funnel plot data
-  # df_funnel <- shiny::reactive({
-  #   get_data_for_funnel_plot(
-  #     df = df,
-  #     month_selected = filtered_month_current(),
-  #     metric_selected = "Number of new consultant-led outpatient appointments for patients in the cohort"
-  #   )
-  # })
-
   funnel_data <- shiny::reactiveVal(NULL)
   shiny::observeEvent(
     list(input$selected_month, input$selected_metric),
@@ -71,6 +63,16 @@ server <- function(input, output, session) {
   )
 
   # outputs -------------------------------------------------------------------
+  ## national outputs ----
+  output$national_table <- reactable::renderReactable({
+    display_dashboard_national(
+      df = df,
+      month_latest = filtered_month_current(),
+      month_prev = filtered_month_previous()
+    )
+  })
+
+  ## place outputs ---
   output$place_header <- shiny::renderText({
     req(input$selected_place)
     input$selected_place
