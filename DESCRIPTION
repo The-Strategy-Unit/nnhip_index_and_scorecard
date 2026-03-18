@@ -19,6 +19,7 @@ Imports:
     AzureKeyVault,
     AzureStor,
     brand.yml,
+    bsicons,
     bslib,
     cli,
     dataui (>= 0.0.1),
