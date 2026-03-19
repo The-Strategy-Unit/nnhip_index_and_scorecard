@@ -25,11 +25,14 @@ Imports:
     glue,
     here,
     janitor,
+    Microsoft365R,
     png,
     purrr,
     readxl,
     rmarkdown,
+    stringr,
     tibble,
-    tidyr
+    tidyr,
+    zoo
 Remotes: 
     matt-dray/gex
