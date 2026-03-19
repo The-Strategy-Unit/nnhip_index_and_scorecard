@@ -220,3 +220,57 @@ get_su_lakemart_parquet_file <- function(str_file_pattern = "") {
   # return the df
   return(df_return)
 }
+
+#' List all packages referenced via `pkg::function` syntax
+#'
+#' @description
+#' This function scans R code and extracts the names of all packages reference using the `pkg::function` syntax. It is useful for identifying dependencies in scripts, functions or entire directories of R files.
+#'
+#' The input can be:
+#' - a character vector of code lines
+#' - a file path to an `.R` script
+#' - or a function object (which will be deparsed)
+#'
+#' The function returns a unique, alphabetically sorted character vector of package names.
+#'
+#' @param x A character vector of code, a file path or a function object
+#'
+#' @returns A character vector of unique package names referenced via `pkg::fun`
+#'
+#' @examples
+#' # from a character vector
+#' list_used_packages("dplyr::mutate(stringr::str_detect(x, 'a'))")
+#'
+#' # from a file
+#' \dontrun{
+#' list_used_packages("R/process_submission.R")
+#' }
+#'
+#' # from a function
+#' my_fun <- function() dplyr::mutate(mtcars, cyl2 = cyl * 2)
+#' list_used_packages(my_fun)
+#'
+list_used_packages <- function(x) {
+  # x can be: a character vector of code, a file path, or a function
+
+  # If x is a file path, read it
+  if (length(x) == 1 && file.exists(x)) {
+    x <- readLines(x, warn = FALSE)
+  }
+
+  # If x is a function, deparse it
+  if (is.function(x)) {
+    x <- deparse(x)
+  }
+
+  # Extract all occurrences of pkg::fun
+  matches <- stringr::str_extract_all(x, "\\b[[:alnum:].]+(?=::)")
+
+  # Flatten, drop NULLs, unique, sorted
+  pkgs <- matches |>
+    unlist() |>
+    unique() |>
+    sort()
+
+  pkgs
+}
