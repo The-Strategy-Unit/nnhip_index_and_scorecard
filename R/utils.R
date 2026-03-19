@@ -224,14 +224,17 @@ get_su_lakemart_parquet_file <- function(str_file_pattern = "") {
 #' List all packages referenced via `pkg::function` syntax
 #'
 #' @description
-#' This function scans R code and extracts the names of all packages reference using the `pkg::function` syntax. It is useful for identifying dependencies in scripts, functions or entire directories of R files.
+#' This function scans R code and extracts the names of all packages reference
+#' using the `pkg::function` syntax. It is useful for identifying dependencies
+#' in scripts, functions or entire directories of R files.
 #'
 #' The input can be:
 #' - a character vector of code lines
 #' - a file path to an `.R` script
 #' - or a function object (which will be deparsed)
 #'
-#' The function returns a unique, alphabetically sorted character vector of package names.
+#' The function returns a unique, alphabetically sorted character vector of
+#' package names.
 #'
 #' @param x A character vector of code, a file path or a function object
 #'
