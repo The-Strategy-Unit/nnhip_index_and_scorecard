@@ -30,6 +30,7 @@ Imports:
     here,
     janitor,
     plotly,
+    Microsoft365R,
     png,
     purrr,
     reactable,
@@ -39,7 +40,8 @@ Imports:
     shiny,
     stringr,
     tibble,
-    tidyr
+    tidyr,
+    zoo
 Remotes: 
     matt-dray/gex,
     timelyportfolio/dataui
