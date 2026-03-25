@@ -65,7 +65,12 @@ list_submission_files <- function(
   tmp <- tempfile()
   dir.create(tmp)
   folder$download(dest = tmp, recursive = TRUE, parallel = TRUE)
-  files <- list.files(tmp, recursive = TRUE, full.names = TRUE)
+  files <- list.files(
+    tmp,
+    recursive = TRUE,
+    full.names = TRUE,
+    pattern = "*\\.xlsx$"
+  )
 
   # return the list of files
   return(files)
@@ -359,7 +364,7 @@ process_submission <- function(str_submission_filepath) {
       path = str_submission_filepath,
       sheet = "Instructions",
       col_types = "text",
-      col_names = c("col_1", "col_2")
+      col_names = c("col_1", "col_2"),
     )
   # read submission template (avoid console messages about name repair)
   raw_st <-
@@ -369,6 +374,7 @@ process_submission <- function(str_submission_filepath) {
         sheet = "SubmissionTemplate",
         col_types = "text",
         col_names = FALSE,
+        range = "A1:Z50" # need this to cut off any trailing comments at the end of the data table, e.g. "No current data available"
         # .name_repair = "minimal" # prevent console messages about column name creation
       )
     )
