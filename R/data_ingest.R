@@ -1,3 +1,119 @@
+#' Retrieve a refrence to a folder within a Microsoft Teams channel
+#'
+#' @description
+#' This helper function connects to a Microsoft Teams channel (backed by
+#' SharePoint) and returns a reference to a specific folder within that
+#' channel's file storage. It centralises the logic for locating the correct
+#' team, channel and folder, thereby reducing duplication across the codebase.
+#'
+#' @details
+#' The function expects two environment variables to be set:
+#' - `su_team`: the display name of the Microsoft Team
+#' - `su_channel`: the name of the channel within that team
+#'
+#' These are used to locate the correct SharePoint document library.
+#'
+#' If the team, channel or folder cannot be found, the function aborts with a clear error message.
+#'
+#' @param base_folder Character string giving the name of the folder to retrive from the channel's root directory. Defaults to "Neighbourhood DC".
+#'
+#' @returns An `ms_drive_item` object representing the requested folder
+get_ms_teams_folder <- function(base_folder = "Neighbourhood DC") {
+  # get environment variables
+  team_name <- Sys.getenv("su_team")
+  channel_name <- Sys.getenv("su_channel")
+  if (team_name == "" || channel_name == "") {
+    cli::cli_abort(
+      "Environment variables {.var su_team} and {.var su_channel} must be set."
+    )
+  }
+
+  # access the team
+  team <- tryCatch(
+    Microsoft365R::get_team(team_name = team_name),
+    error = function(e) {
+      cli::cli_abort(
+        "Could not access the Microsoft Team {.val {team_name}}.
+        Check that the name is correct and that you have permission."
+      )
+    }
+  )
+
+  # access the channel
+  channel <- tryCatch(
+    team$get_channel(channel_name),
+    error = function(e) {
+      cli::cli_abort(
+        "The channel {.val {channel_name}} does not exist in team {.val {team_name}}"
+      )
+    }
+  )
+
+  # access the root folder
+  root <- channel$get_folder()
+
+  # access the base folder
+  folder <- tryCatch(
+    root$get_item(base_folder),
+    error = function(e) {
+      cli::cli_abort(
+        "The folder {.val {base_folder}} does not exist in this channel."
+      )
+    }
+  )
+
+  # return the folder object
+  return(folder)
+}
+
+#' List subfolders within a Microsoft Teams / SharePoint folder
+#'
+#' @description
+#' This function returns the names of all subfolders inside a specified
+#' Microsoft Teams channel folder. If no folder object is supplied, it
+#' retrieves the default folder using `get_ms_teams_folder()`.
+#'
+#' @details
+#' The function lists all items within the folder and filters for those where
+#' `isdir == TRUE`, returning their names. If no subfolders are found, the
+#' function aborts with a descriptive error message.
+#'
+#' @param ms_teams_folder Optional `ms_drive_item` object representing a folder in a Teams / SharePoint document library. If `NULL` (the default), the function will call `get_ms_teams_folder()` to obtain the base folder.
+#'
+#' @returns A character vector of folder names
+list_submission_folders <- function(ms_teams_folder = NULL) {
+  # ensure we have a teams folder to work with
+  if (is.null(ms_teams_folder)) {
+    folder <- get_ms_teams_folder()
+  } else {
+    folder <- ms_teams_folder
+  }
+
+  # validate the folder object
+  if (!folder$is_folder()) {
+    cli::cli_abort(
+      "The supplied object is not a valid {.cls ms_drive_item} folder."
+    )
+  }
+
+  # list the items in this folder
+  items <- folder$list_items()
+
+  # keep only the folders
+  submission_folders <-
+    items |>
+    dplyr::filter(isdir == TRUE) |>
+    dplyr::pull(name)
+
+  # check we have at least one folder to return
+  if (length(submission_folders) == 0) {
+    cli::cli_abort("No submission folders found.")
+  }
+
+  # return the list of files
+  return(submission_folders)
+}
+
 #' List submission files stored in a Microsoft Teams channel
 #'
 #' @description
@@ -19,33 +135,16 @@
 #' }
 list_submission_files <- function(
   month = NULL,
-  base_folder = "Neighbourhood DC"
+  base_folder = "Neighbourhood DC",
+  ms_teams_folder = NULL
 ) {
-  # get environment variables
-  team_name <- Sys.getenv("su_team")
-  channel_name <- Sys.getenv("su_channel")
-  if (team_name == "" || channel_name == "") {
-    cli::cli_abort(
-      "Environment variables {.var su_team} and {.var su_channel} must be set."
-    )
+  # get a reference to the ms_teams_folder if it was not supplied
+  if (is.null(ms_teams_folder)) {
+    folder <- get_ms_teams_folder()
+  } else {
+    # otherwise use the supplied object
+    folder <- ms_teams_folder
   }
-
-  # access the team and channel
-  team <- Microsoft365R::get_team(team_name = team_name)
-  channel <- team$get_channel(channel_name)
-  root <- channel$get_folder()
-
-  # access the base folder
-  tryCatch(
-    {
-      folder <- root$get_item(base_folder)
-    },
-    error = function(e) {
-      cli::cli_abort(
-        "The folder {.val {base_folder}} does not exist in this channel."
-      )
-    }
-  )
 
   # # get a specific submission month if requested
   if (!is.null(month)) {
@@ -417,9 +516,12 @@ process_submission <- function(str_submission_filepath) {
 #' \dontrun{
 #' df <- ingest_data (month = "2026-01")
 #' }
-ingest_data <- function(month = NULL) {
+ingest_data <- function(month = NULL, ms_teams_folder = NULL) {
   # call a process to download a local copy of the data and return their filepaths
-  files <- list_submission_files(month = month)
+  files <- list_submission_files(
+    month = month,
+    ms_teams_folder = ms_teams_folder
+  )
 
   # handle cases where no files are returned
   if (length(files) == 0) {
@@ -462,6 +564,10 @@ ingest_data <- function(month = NULL) {
       }
     )
 
+  # let the user know how many files were read
+  n_files <- length(files)
+  cli::cli_alert_success("{n_files} file{?s} were processed.")
+
   cli::cli_progress_done()
 
   # combine all the returned responses to a tibble
@@ -469,4 +575,110 @@ ingest_data <- function(month = NULL) {
 
   # return the collated data
   return(df)
+}
+
+#' Update pinned monthly and combined datasets on Posit Connect
+#'
+#' @description
+#' This function igests all submitted Excel files for a given month, stores the
+#' cleaned monthly dataset as a pin, updates the list of processed months and
+#' refereshes a combined dataset containing all months' submissions.
+#'
+#' @returns Invisibly returns TRUE on success
+update_pinned_data_for_month <- function() {
+  # connect to the Teams / SharePoint site
+  folder <- get_ms_teams_folder()
+
+  # list folders
+  folders <- list_submission_folders(ms_teams_folder = folder)
+
+  # display a numbered menu
+  cli::cli_h2("Available submission folders:")
+  cli::cli_ol(items = folders)
+
+  # ask the user to choose
+  choice <- readline("Select a folder by number: ")
+
+  # validate the choice
+  if (!choice %in% (length(folders) |> seq_len() |> as.character())) {
+    cli::cli_abort("Invalid selection.")
+  }
+
+  # get the name of the selected folder
+  month_id <- folders[as.integer(choice)]
+
+  # process a month's data safely to catch any errors
+  safe_ingest_data <- purrr::safely(ingest_data)
+  out <- safe_ingest_data(month = month_id, ms_teams_folder = folder)
+  if (!is.null(out$error)) {
+    cli::cli_abort(
+      "Failed to read all submissions for {.val {month_id}}: {out$error$message}"
+    )
+  }
+  df_month <- out$result
+
+  # connect to the Posit Connect board
+  server <- Sys.getenv("posit_server")
+  account <- Sys.getenv("posit_account")
+  prefix <- Sys.getenv("pin_prefix")
+
+  board <- pins::board_connect(server = server, account = account)
+
+  # store the ingested month's data in a pin
+  monthly_pin <- glue::glue("{prefix}{month_id}")
+  pins::pin_write(
+    board = board,
+    name = monthly_pin,
+    x = df_month,
+    type = "rds"
+  ) |>
+    suppressMessages()
+
+  # get a previous list of month_id's stored as pins
+  months_pin <- glue::glue("{prefix}months")
+  reporting_months <- pins::pin_read(
+    board = board,
+    name = months_pin
+  )
+
+  # add the latest month_id to this vector
+  reporting_months <-
+    c(reporting_months, month_id) |>
+    unique() |>
+    sort()
+
+  # write this vector back to the pin listing months processed
+  pins::pin_write(
+    board = board,
+    name = months_pin,
+    x = reporting_months,
+    type = "rds"
+  ) |>
+    suppressMessages()
+
+  # combine all monthly submissions to a single overall dataset
+  df_all <-
+    purrr::map_dfr(
+      .x = reporting_months,
+      .f = \(.x) {
+        pin_name = glue::glue("{prefix}{.x}")
+        pins::pin_read(board = board, name = pin_name)
+      }
+    )
+
+  # write / update this combined dataset to the pin board too
+  pin_name <- glue::glue("{prefix}all")
+  pins::pin_write(
+    board = board,
+    x = df_all,
+    name = pin_name,
+    type = "rds"
+  ) |>
+    suppressMessages()
+
+  # clean up the connections to the temporary files downloaded from SharePoint
+  closeAllConnections()
+
+  # return
+  invisible(TRUE)
 }
