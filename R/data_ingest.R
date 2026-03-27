@@ -682,3 +682,67 @@ update_pinned_data_for_month <- function() {
   # return
   invisible(TRUE)
 }
+
+#' Create placeholder monthly pins on Posit Connect
+#'
+#' @description
+#' This function pre-creates a set of monthly pins on a Posit Connect board. Each pin is populated with a simple placeholder object and named using a prefix combined with the year-month (e.g., "craig.parylo/nnhip_scorecard_reporting").
+#'
+#' The purpose is to establish all required pins *in advance*, so that access control can be configured once (e.g., granting a team group collaborator access). After this setup, any team member can update the pin without running into ownership issues.
+#'
+#' @details
+#' This function:
+#' 1. Connects to a Posit Connect board using environment variables:
+#'   - `posit_server`
+#'   - `posit_account`
+#'   - `pin_prefix`
+#' 2. Generates a monthly sequence from `from` to `to`
+#' 3. Writes a placeholder RDS object to each pin name
+#'
+#' The placeholder is intentionally minimal; its only purpose is to create the pin so that access control can be configured manually via the web GUI.
+#'
+#' @param from A character string coercible to Date. The first month to create.
+#' @param to A character string coercible to Date. The last month to create.
+#'
+#' @returns Invisibly returns TRUE on success.
+#'
+#' @examples
+#' \dontrun{
+#' create_placeholder_pins(from = "2026-02-01", to = "2027-03-01")
+#' }
+create_placeholder_pins <- function(from = "2026-02-01", to = "2027-3-01") {
+  # connect to the Posit Connect board
+  server <- Sys.getenv("posit_server")
+  account <- Sys.getenv("posit_account")
+  prefix <- Sys.getenv("pin_prefix")
+
+  board <- pins::board_connect(server = server, account = account)
+
+  # create a placeholder object
+  placeholder <- c("Placeholder")
+
+  # create a list of months to generate pins for
+  months <- seq(
+    from = as.Date(from),
+    to = as.Date(to),
+    by = "month"
+  )
+
+  # iterate over each month and store a placeholder rds object as a pin
+  purrr::walk(
+    .x = months,
+    .f = \(.x) {
+      # create the pin name
+      pin_name <- glue::glue("{prefix}{.x |> format('%Y-%m')}")
+      pins::pin_write(
+        board = board,
+        name = pin_name,
+        x = placeholder,
+        type = "rds"
+      )
+      cli::cli_inform("Created: {.val {pin_name}}")
+    }
+  )
+
+  invisible(TRUE)
+}
