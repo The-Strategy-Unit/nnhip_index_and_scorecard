@@ -2,6 +2,34 @@
 # DASHBOARD HELPER FUNCTIONS
 # -----------------------------------------------------------------------------
 
+#' Add a metric column to a dataframe
+#'
+#' @description
+#' This function creates a new `metric` column based on `value_type` and fills
+#' the metric description upward within each `metric_block`.
+#'
+#' @param df A data frame loaded from a Connect Pin, which contains the
+#' combined monthly aggregate data submissions for the NNHIP project
+#'
+#' @returns A data frame with an added and filled `metric` column
+add_metric_column_to_df <- function(df) {
+  df_return <-
+    df |>
+    dplyr::mutate(
+      # create a new column called 'metric' which uses the metric details rate description
+      metric = dplyr::case_when(
+        value_type == "rate_per_1000" ~ metric_details,
+        .default = NA_character_
+      )
+    ) |>
+    # fill in the details for the three parts of the metric (count, patients, rate_per_1000)
+    tidyr::fill(
+      metric,
+      .by = metric_block,
+      .direction = "up"
+    )
+}
+
 #' Extract dashboard-ready metric summary for a given place and month
 #'
 #' @description
@@ -32,10 +60,10 @@ get_place_month_summary <- function(df, selected_month, selected_place = NULL) {
     dplyr::filter(
       month_zoo == selected_month,
       place == selected_place,
-      breakdown_dimension == "Total",
+      demographic_type == "Total",
       dplyr::when_any(
-        (metric_id == "P1" & measure == "patients"),
-        (metric_id != "P1" & measure == "rate_per_1000")
+        (metric_id == "P1" & value_type == "count"),
+        (metric_id != "P1" & value_type == "rate_per_1000")
       )
     )
 
@@ -65,12 +93,15 @@ get_place_month_summary <- function(df, selected_month, selected_place = NULL) {
 #' )
 #' }
 summarise_averages <- function(df, selected_place = NULL) {
+  # get the names of the metrics
+  df_metric_names <- get_metric_names(df = df, include_p1 = TRUE)
+
   # filter to total breakdown and remove pre-calculated rates
   df_temp <-
     df |>
     dplyr::filter(
-      breakdown_dimension == "Total",
-      measure != "rate_per_1000" # remove pre-calculated rates
+      demographic_type == "Total",
+      value_type != "rate_per_1000" # remove pre-calculated rates
     )
 
   # if a place is selected then filter to that place
@@ -86,38 +117,46 @@ summarise_averages <- function(df, selected_place = NULL) {
     dplyr::filter(metric_id != "P1") |>
     dplyr::summarise(
       value = sum(value, na.rm = TRUE),
-      .by = c(metric_id, metric_details, measure)
+      .by = c(metric_id, metric_block, value_type)
     ) |>
     # work out the rate
     tidyr::pivot_wider(
-      names_from = measure,
+      names_from = value_type,
       values_from = value
     ) |>
     dplyr::mutate(rate_per_1000 = (count / patients) * 1000) |>
-    # collapse back to measure | value columns
+    # collapse back to value_type | value columns
     tidyr::pivot_longer(
       cols = c(patients, count, rate_per_1000),
-      names_to = "measure",
+      names_to = "value_type",
       values_to = "value"
     ) |>
     # remove numerator and denominator from all outcome measures
-    dplyr::filter(measure == "rate_per_1000")
+    dplyr::filter(value_type == "rate_per_1000")
 
   # process metric P1: average number of patients
   df_process <-
     df_temp |>
     dplyr::filter(
       metric_id == "P1",
-      measure == "patients"
+      value_type == "count"
     ) |>
     # summarise for the average
     dplyr::summarise(
       value = mean(value, na.rm = TRUE),
-      .by = c(metric_id, metric_details, measure)
+      .by = c(metric_id, metric_block, value_type)
     )
 
   # combine rows together
-  df_return <- dplyr::bind_rows(df_outcomes, df_process)
+  df_combined <- dplyr::bind_rows(df_outcomes, df_process)
+
+  # reconstruct the return df
+  df_return <-
+    df_metric_names |>
+    dplyr::left_join(
+      y = df_combined,
+      by = dplyr::join_by(x$metric_block == y$metric_block)
+    )
 
   return(df_return)
 }
@@ -127,8 +166,8 @@ summarise_averages <- function(df, selected_place = NULL) {
 #'
 #' @description
 #' This function filters a metric dataset for a given place and returns sparkline-ready trend data. It keeps onlyl rows representing the *Total* breakdown and applies metric-specific measure rules:
-#' - for metric `"P1"`, only rows where `measure == "patients"` are included
-#' - for all other metrics, only rows where `measure == "rate_per_1000"` are included
+#' - for metric `"P1"`, only rows where `value_type == "patients"` are included
+#' - for all other metrics, only rows where `value_type == "rate_per_1000"` are included
 #'
 #' The filtered data is ordered by `month_zoo` and summarised into a list-column containing the time-ordered values for each metric.
 #'
@@ -148,16 +187,16 @@ get_sparkline_data <- function(df, selected_place) {
   df |>
     dplyr::filter(
       place == selected_place,
-      breakdown_dimension == "Total",
+      demographic_type == "Total",
       dplyr::when_any(
-        (metric_id == "P1" & measure == "patients"),
-        (metric_id != "P1" & measure == "rate_per_1000")
+        (metric_id == "P1" & value_type == "count"),
+        (metric_id != "P1" & value_type == "rate_per_1000")
       )
     ) |>
-    dplyr::select(metric_id, metric_details, measure, month_zoo, value) |>
+    dplyr::select(metric_id, metric_details, value_type, month_zoo, value) |>
     dplyr::summarise(
       trendline = list(value[order(month_zoo)]),
-      .by = c(metric_id, metric_details, measure)
+      .by = c(metric_id, metric_details, value_type)
     )
 }
 
@@ -440,32 +479,42 @@ display_dashboard <- function(df, place_selected, month_latest, month_prev) {
 #' Prepare data for funnel plot visualisation
 #'
 #' @description
-#' `get_data_for_funnel_plot()` filters, reshapes and enriches a dataset so it can be used to construct a funnel plot for a selected month and metric.
+#' This function filters a dataset to a selected month and computers the
+#' **Poisson-based 95% and 99% funnel plot limits** for a selected month and
+#' metric.
+#' It returns one row per metric with numerator, denominator, rate per 1,000,
+#' Poisson confidence limits and a categorical marker indicating whether the
+#' point lies inside or outside the funnel boundaries.
 #'
-#' The function:
-#' - filters the input dataset to the chosen month and metric
-#' - pivots numerator, denominator and rate onto a single row per place
-#' - calculates Wilson confidence limits (95% and 99%)
-#' - classifies each point according to its position relative to the limits
-#' - generates formatted hover text for interactive visualisation (e.g. {plotly})
+#' @details
+#' The function performs the following steps:
+#'
+#' **1. Filter and reshape**
+#' - Keeps only rows for the selected month and the `"Total"` demographic
+#' - Pivots the data wider so that `patients`, `count` and `rate_per_1000`
+#'   appear on the same row for each metric.
+#'
+#' **2. Computer Poisson confidence limits**
+#' - Calculates the *overall national rate* for each metric
+#' - Computes the *expected count* under this overall rate
+#' - Uses the chi-square method to derive exact Poisson 95% and 99% limits
+#'   for the count
+#' - Converts these limits into rates per 1,000 population
+#'
+#' **3. Categorise each metric**
+#' - Labels each point as `"Outside 99%"`, `"Outside 95%"`, or `"Within 95%"`
+#'   depending on where its rate falls relative to the funnel limits.
 #'
 #' @param df A tibble of metric data.
 #' @param month_selected A zoo::yearmon identifying the 'current' month
 #' @param metric_selected A character string specifying a metric
 #'
-#' @returns A tibble containing one row per place with the following additional fields:
-#' - **overall_p**: overall proportion across all places
-#' - **Wilson 95% and 99% limits**: (`lower_95`, `upper_95`, `lower_99`, `upper_99`)
-#' - **marker_category**: factor indicating whether the point lies *within 95%*, *outside 95%* or *outside 99%* limits
-#' - **hover_text**: HTML-formatted string suitable for {plotly} hover labels
-#'
-#' @details
-#' The function uses the Wilson score interval to compute funnel limits. This method is preferred over the normal approximation because it:
-#' - behaves well for small denominators
-#' - avoids convidence limits outside the [0, 1] range
-#' - produces smoother, more stable funnel boundaries
-#'
-#' Rates are expressed per 1,000 population (or per 1,000 denominator units) so confidence limits are multiplied by 1,000 for consistency with `rate_per_1000`
+#' @returns A data frame with one row per place with the following additional fields:
+#' - numerator (`count`)
+#' - denominator (`patients`)
+#' - observed rate per 1,000
+#' - Poisson 95% and 99% limits
+#' - marker category for funnel plotting
 #'
 #' @examples
 #' \dontrun{
@@ -478,47 +527,43 @@ display_dashboard <- function(df, place_selected, month_latest, month_prev) {
 get_data_for_funnel_plot <- function(df, month_selected, metric_selected) {
   df_return <-
     df |>
+    # exclude the metric_details column (this will adversely affect the below pivot)
+    dplyr::select(-c(metric_details)) |>
     # filter the data for the specified month and metric
     dplyr::filter(
       month_zoo == month_selected,
-      metric_details == metric_selected,
-      breakdown_dimension == "Total"
+      metric == metric_selected,
+      demographic_type == "Total"
     ) |>
     # pivot wider to put the numerator / denominator / rate on the same row
     tidyr::pivot_wider(
-      names_from = measure,
+      names_from = value_type,
       values_from = value
     ) |>
     # work out some measures
     dplyr::mutate(
-      # overall proportion
-      overall_p = sum(count, na.rm = TRUE) / sum(patients, na.rm = TRUE),
+      .by = c(metric_block),
 
-      # z-values
-      z95 = 1.96,
-      z99 = 2.576,
+      # overall rate
+      overall_rate = sum(count, na.rm = TRUE) / sum(patients, na.rm = TRUE),
 
-      # Wilson centre adjustments
-      centre_95 = (overall_p + (z95^2) / (2 * patients)) /
-        (1 + (z95^2) / patients),
-      centre_99 = (overall_p + (z99^2) / (2 * patients)) /
-        (1 + (z99^2) / patients),
+      # expected count under the overall rate
+      expected_count = overall_rate * patients,
 
-      # Wilson half-widths
-      hw_95 = (z95 / (1 + (z95^2) / patients)) *
-        sqrt(
-          (overall_p * (1 - overall_p) / patients) + (z95^2) / (4 * patients^2)
-        ),
-      hw_99 = (z99 / (1 + (z99^2) / patients)) *
-        sqrt(
-          (overall_p * (1 - overall_p) / patients) + (z99^2) / (4 * patients^2)
-        ),
+      # Poisson limits for counts
+      lower_count_95 = 0.5 * stats::qchisq(p = 0.025, df = 2 * expected_count),
+      upper_count_95 = 0.5 *
+        stats::qchisq(p = 0.975, df = 2 * (expected_count + 1)),
 
-      # final limits (multiplied by 1000 to get rate per 1000)
-      lower_95 = (centre_95 - hw_95) * 1000,
-      upper_95 = (centre_95 + hw_95) * 1000,
-      lower_99 = (centre_99 - hw_99) * 1000,
-      upper_99 = (centre_99 + hw_99) * 1000,
+      lower_count_99 = 0.5 * stats::qchisq(p = 0.005, df = 2 * expected_count),
+      upper_count_99 = 0.5 *
+        stats::qchisq(p = 0.995, df = 2 * (expected_count + 1)),
+
+      # convert to rates per 1000
+      lower_95 = (lower_count_95 / patients) * 1000,
+      upper_95 = (upper_count_95 / patients) * 1000,
+      lower_99 = (lower_count_99 / patients) * 1000,
+      upper_99 = (upper_count_99 / patients) * 1000,
 
       # categorise points based on their position relative to confidence limits
       marker_category = dplyr::case_when(
@@ -558,7 +603,7 @@ get_data_for_funnel_plot <- function(df, month_selected, metric_selected) {
 #'   - `rate_per_1000`: observed rate per 1000
 #'   - `marker_category`: factor indicating whether the point is within or outside control limits
 #'   - `upper_95`, `lower_95`, `upper_99`, `lower_99`: control limits
-#'   - `overall_p`: overall proportion (used for the central line)
+#'   - `overall_rate`: overall rate (used for the central line)
 #'   - `hover_text`: text displayed on hover
 #' @param place_selected A single place name (string) indicating which place should be highlighted in the plot
 #' @param metric_selected A string describing the metric being plotted. Used to construct the plot title
@@ -606,6 +651,45 @@ get_funnel_plot <- function(
     df_funnel |>
     dplyr::filter(place == place_selected)
 
+  # create smooth limits for the 99% and 95% limit lines
+  df_limits <- tibble::tibble(
+    patients = seq(
+      from = min(df_funnel$patients),
+      to = max(df_funnel$patients),
+      length.out = 400
+    )
+  )
+
+  # compute the expected counts using the overall rate
+  overall_rate <- df_funnel$overall_rate |> unique()
+
+  df_limits <-
+    df_limits |>
+    dplyr::mutate(
+      expected = patients * overall_rate,
+
+      # Poisson limits for expected counts
+      lower_95 = 0.5 *
+        stats::qchisq(p = 0.025, df = 2 * expected) /
+        patients *
+        1000,
+      upper_95 = 0.5 *
+        stats::qchisq(p = 0.975, df = 2 * (expected + 1)) /
+        patients *
+        1000,
+
+      lower_99 = 0.5 *
+        stats::qchisq(p = 0.005, df = 2 * expected) /
+        patients *
+        1000,
+      upper_99 = 0.5 *
+        stats::qchisq(p = 0.995, df = 2 * (expected + 1)) /
+        patients *
+        1000,
+
+      central = overall_rate * 1000
+    )
+
   # prepare formatting options ---
   colour_95_limit <- list(
     color = adjustcolor(col = "#959595", alpha.f = 0.5),
@@ -651,7 +735,7 @@ get_funnel_plot <- function(
       line = colour_95_limit
     ),
     central = list(
-      var = ~ overall_p * 1000,
+      var = ~ overall_rate * 1000,
       name = "Reference rate",
       line = colour_central
     )
@@ -663,19 +747,21 @@ get_funnel_plot <- function(
     lower_99 = list(var = ~lower_99, txt = "99% limit"),
     upper_95 = list(var = ~upper_95, txt = "95% limit"),
     lower_95 = list(var = ~lower_95, txt = "95% limit"),
-    central = list(var = ~ overall_p * 1000, txt = "Central")
+    central = list(var = ~ overall_rate * 1000, txt = "Central")
   )
 
-  # plot
+  # plot the markers
   p <- plotly::plot_ly(
     data = df_funnel |> dplyr::filter(place != place_selected),
     x = ~patients,
     y = ~rate_per_1000,
+    type = "scattergl",
     mode = "markers",
     color = ~marker_category,
     colors = marker_colours,
-    type = "scattergl",
-    frame = ~month_zoo
+    marker = list(size = 14, line = list(color = "#fff", width = 2)),
+    hoverinfo = "text",
+    text = ~hover_text
   )
 
   # add 99%, 95% and central lines
@@ -683,11 +769,15 @@ get_funnel_plot <- function(
     p <-
       p |>
       plotly::add_lines(
+        # data = df_funnel,
+        data = df_limits,
+        x = ~patients,
         y = ln$var,
         name = ln$name,
         line = ln$line,
+        type = "scatter",
         hoverinfo = "skip",
-        frame = ~month_zoo
+        inherit = FALSE
       )
   }
 
@@ -697,28 +787,17 @@ get_funnel_plot <- function(
       p |>
       plotly::add_text(
         data = df_last,
+        x = ~patients,
         y = lab$var,
         text = lab$txt,
         textposition = "right",
         hoverinfo = "skip",
         cliponaxis = FALSE,
         textfont = list(color = "#2c2825"),
-        mode = "lines",
-        frame = ~month_zoo
+        mode = "text",
+        inherit = FALSE
       )
   }
-
-  # add the markers
-  p <-
-    p |>
-    plotly::add_markers(
-      data = df_funnel |> dplyr::filter(place != place_selected),
-      name = "Observed rate",
-      marker = list(size = 14, line = list(color = "#fff", width = 2)),
-      hoverinfo = "text",
-      text = ~hover_text,
-      frame = ~month_zoo
-    )
 
   # add the selected place marker
   p <-
@@ -726,14 +805,14 @@ get_funnel_plot <- function(
     plotly::add_markers(
       data = df_place,
       name = "Selected place",
+      mode = "markers",
       marker = list(
         size = 18,
         color = "#f9bd07",
         line = list(color = "#5881c1", width = 4)
       ),
       hoverinfo = "text",
-      text = ~hover_text,
-      frame = ~month_zoo
+      text = ~hover_text
     )
 
   # add the layout
@@ -754,12 +833,7 @@ get_funnel_plot <- function(
       showlegend = FALSE,
       margin = list(l = 40, r = 40, t = 100, b = 60)
     ) |>
-    plotly::config(displaylogo = FALSE) |>
-    plotly::animation_opts(
-      frame = 1000,
-      transition = 500,
-      easing = "cubic-in-out"
-    )
+    plotly::config(displaylogo = FALSE)
 
   # return the plot
   return(p)
@@ -776,19 +850,19 @@ get_funnel_plot <- function(
 #' @details
 #' The function performs three main operations:
 #' **1. Pre-processing**
-#' - Filters the dataset to include only rows where `breakdown_dimension == "Total"`.
-#' - Removes any rows where `measure == "rate_per_1000"` to avoid using
+#' - Filters the dataset to include only rows where `demographic_type == "Total"`.
+#' - Removes any rows where `value_type == "rate_per_1000"` to avoid using
 #'   pre-calculated rates.
 #'
 #' **2. Outcome metrics (all except `P1`)**
 #' - Sums numerator (`count`) and denominator (`patients`) values by `metric_id`,
-#'   `metric_details`, `measure`, `month_zoo`, and `month`
+#'   `metric_details`, `value_type`, `month_zoo`, and `month`
 #' - Reshapes the data wide to compute a fresh `rate_per_1000` using
 #' `rate_per_1000 = count / patients * 1000`.
 #' - Reshapes back to long format and keeps only the calculated rate.
 #'
 #' **3. Process metric (`P1`)**
-#' - Filters to metric `P1` and measure `patients`
+#' - Filters to metric `P1` and value_type `patients`
 #' - Computes the *mean* number of patients per month at national level
 #'
 #' The final output is a combined dataset containing:
@@ -801,7 +875,7 @@ get_funnel_plot <- function(
 #' outcome rates. Columns include:
 #' - `metric_id`,
 #' - `metric_details`,
-#' - `measure`,
+#' - `value_type`,
 #' - `value`,
 #' - `month_zoo`,
 #' - `month`
@@ -815,9 +889,16 @@ national_monthly_averages <- function(df) {
   df_temp <-
     df |>
     dplyr::filter(
-      breakdown_dimension == "Total",
-      measure != "rate_per_1000" # remove pre-calculated rates
+      demographic_type == "Total",
+      value_type != "rate_per_1000" # remove pre-calculated rates
     )
+
+  # get the metric names
+  df_metric_names <- get_metric_names(df = df)
+  # df |>
+  # dplyr::filter(demographic_type == "Total", value_type == "rate_per_1000") |>
+  # dplyr::select(metric_block, metric_details) |>
+  # dplyr::distinct()
 
   # outcome metrics: compute rate_per_1000 from summed numerator + denominator
   df_outcomes <-
@@ -825,38 +906,47 @@ national_monthly_averages <- function(df) {
     dplyr::filter(metric_id != "P1") |>
     dplyr::summarise(
       value = sum(value, na.rm = TRUE),
-      .by = c(metric_id, metric_details, measure, month_zoo, month)
+      # .by = c(metric_id, metric_details, value_type, month_zoo, month)
+      .by = c(metric_block, metric_id, value_type, month_zoo, month)
     ) |>
     # work out the rate
     tidyr::pivot_wider(
-      names_from = measure,
+      names_from = value_type,
       values_from = value
     ) |>
     dplyr::mutate(rate_per_1000 = (count / patients) * 1000) |>
-    # collapse back to measure | value columns
+    # collapse back to value_type | value columns
     tidyr::pivot_longer(
       cols = c(patients, count, rate_per_1000),
-      names_to = "measure",
+      names_to = "value_type",
       values_to = "value"
     ) |>
     # remove numerator and denominator from all outcome measures
-    dplyr::filter(measure == "rate_per_1000")
+    dplyr::filter(value_type == "rate_per_1000")
 
   # process metric P1: average number of patients
   df_process <-
     df_temp |>
     dplyr::filter(
       metric_id == "P1",
-      measure == "patients"
+      value_type == "count"
     ) |>
     # summarise for the average
     dplyr::summarise(
       value = mean(value, na.rm = TRUE),
-      .by = c(metric_id, metric_details, measure, month_zoo, month)
+      .by = c(metric_block, metric_id, value_type, month_zoo, month)
     )
 
-  # combine rows together
-  df_return <- dplyr::bind_rows(df_outcomes, df_process)
+  # combine outcome and process rows together
+  df_outcome_process <- dplyr::bind_rows(df_outcomes, df_process)
+
+  # join the combined details to the metric name
+  df_return <-
+    df_metric_names |>
+    dplyr::left_join(
+      y = df_outcome_process,
+      by = dplyr::join_by(x$metric_block == y$metric_block)
+    )
 
   return(df_return)
 }
@@ -865,23 +955,27 @@ national_monthly_averages <- function(df) {
 #'
 #' @description
 #' This function filters a dataset to a selected month and computes the
-#' Wilson-based 95% and 99% funnel plot limits for national-level metrics.
-#' It returns one row per metric with numerator, denominator, rate, confidence
-#' limits and a categorical marker indicating whether the point lies inside or
-#' outside the funnel boundaries.
+#' **Poisson-based 95% and 99% funnel plot limits** for national-level *rate*
+#' metrics.
+#' It returns one row per metric with numerator, denominator, rate per 1,000,
+#' Poisson confidence limits and a categorical marker indicating whether the
+#' point lies inside or outside the funnel boundaries.
 #'
 #' @details
 #' The function performs the following steps:
 #'
 #' **1. Filter and reshape**
-#' - Keeps only rows for the selected month and the `"Total"` breakdown.
+#' - Keeps only rows for the selected month and the `"Total"` demographic
+#' - Aggregates numerator and denominator values.
 #' - Pivots the data wider so that `patients`, `count` and `rate_per_1000`
-#'   appear on the same row.
+#'   appear on the same row for each metric.
 #'
-#' **2. Compute Wilson confidence limits**
-#' - Calculates the overall national proportion
-#' - Computes Wilson centres and half-widths for 95% and 99% limits
-#' - Converts limits into rates per 1000
+#' **2. Compute Poisson confidence limits**
+#' - Calculates the *overall national rate* for each metric
+#' - Computes the *expected count* under this overall rate
+#' - Uses the chi-square method to derive exact Poisson 95% and 99% limits
+#'   for the count
+#' - Converts these limits into rates per 1,000 population
 #'
 #' **3. Categorise each metric**
 #' - Labels each point as `"Outside 99%"`, `"Outside 95%"`, or `"Within 95%"`
@@ -891,9 +985,11 @@ national_monthly_averages <- function(df) {
 #' @param month_selected A zoo::yearmon object indicating which month to extract for the funnel plot
 #'
 #' @returns A data frame with one row per metric containing:
-#' - numerator, denominator and rate
-#' - Wilson 95% and 99% limits
-#' - marker category for plotting
+#' - numerator (`count`)
+#' - denominator (`patients`)
+#' - observed rate per 1,000
+#' - Poisson 95% and 99% limits
+#' - marker category for funnel plotting
 #'
 #' @examples
 #' \dontrun{
@@ -902,55 +998,58 @@ national_monthly_averages <- function(df) {
 #'   month_selected = zoo::as.yearmon("2027-03"))
 #' }
 get_data_for_funnel_plot_national <- function(df, month_selected) {
-  df_return <-
+  # get the metric names as a separate tibble
+  # df_metric_names <-
+  #   df |>
+  #   dplyr::filter(
+  #     demographic_type == "Total",
+  #     value_type == "rate_per_1000",
+  #     metric_id != "P1"
+  #   ) |>
+  #   dplyr::select(metric_block, metric_details) |>
+  #   dplyr::distinct()
+  df_metric_names <- get_metric_names(df = df)
+
+  # work out the limits and categorise
+  df_limits <-
     df |>
     # filter the data for the specified month and metric
     dplyr::filter(
       month_zoo == month_selected,
-      breakdown_dimension == "Total"
+      demographic_type == "Total"
     ) |>
-    # summarise for each metric and measure combination
+    # summarise for each metric and value_type combination
     dplyr::summarise(
       value = sum(value, na.rm = TRUE),
-      .by = c(place, metric_details, measure)
+      .by = c(place, metric_block, value_type)
     ) |>
     # pivot wider to put the numerator / denominator / rate on the same row
     tidyr::pivot_wider(
-      names_from = measure,
+      names_from = value_type,
       values_from = value
     ) |>
-    # work out some measures
+    # work out some value_types
     dplyr::mutate(
-      .by = c(metric_details),
+      .by = c(metric_block),
 
-      # overall proportion
-      overall_p = sum(count, na.rm = TRUE) / sum(patients, na.rm = TRUE),
+      # overall rate
+      overall_rate = sum(count, na.rm = TRUE) / sum(patients, na.rm = TRUE),
 
-      # z-values
-      z95 = 1.96,
-      z99 = 2.576,
+      # expected count under the overall rate
+      expected_count = overall_rate * patients,
 
-      # Wilson centre adjustments
-      centre_95 = (overall_p + (z95^2) / (2 * patients)) /
-        (1 + (z95^2) / patients),
-      centre_99 = (overall_p + (z99^2) / (2 * patients)) /
-        (1 + (z99^2) / patients),
+      # Poisson limits for counts
+      lower_count_95 = 0.5 * stats::qchisq(p = 0.025, df = 2 * count),
+      upper_count_95 = 0.5 * stats::qchisq(p = 0.975, df = 2 * (count + 1)),
 
-      # Wilson half-widths
-      hw_95 = (z95 / (1 + (z95^2) / patients)) *
-        sqrt(
-          (overall_p * (1 - overall_p) / patients) + (z95^2) / (4 * patients^2)
-        ),
-      hw_99 = (z99 / (1 + (z99^2) / patients)) *
-        sqrt(
-          (overall_p * (1 - overall_p) / patients) + (z99^2) / (4 * patients^2)
-        ),
+      lower_count_99 = 0.5 * stats::qchisq(p = 0.005, df = 2 * count),
+      upper_count_99 = 0.5 * stats::qchisq(p = 0.995, df = 2 * (count + 1)),
 
-      # final limits (multiplied by 1000 to get rate per 1000)
-      lower_95 = (centre_95 - hw_95) * 1000,
-      upper_95 = (centre_95 + hw_95) * 1000,
-      lower_99 = (centre_99 - hw_99) * 1000,
-      upper_99 = (centre_99 + hw_99) * 1000,
+      # convert to rates per 1000
+      lower_95 = (lower_count_95 / patients) * 1000,
+      upper_95 = (upper_count_95 / patients) * 1000,
+      lower_99 = (lower_count_99 / patients) * 1000,
+      upper_99 = (upper_count_99 / patients) * 1000,
 
       # categorise points based on their position relative to confidence limits
       marker_category = dplyr::case_when(
@@ -969,6 +1068,16 @@ get_data_for_funnel_plot_national <- function(df, month_selected) {
         factor(levels = c("Outside 99%", "Outside 95%", "Within 95%")),
     )
 
+  # combine the metric names and categories
+  df_return <-
+    df_metric_names |>
+    dplyr::left_join(
+      y = df_limits,
+      by = dplyr::join_by(x$metric_block == y$metric_block)
+    ) |>
+    # remove place:metrics with zero patients (avoid infinite results)
+    dplyr::filter_out(patients == 0)
+
   return(df_return)
 }
 
@@ -981,7 +1090,6 @@ get_data_for_funnel_plot_national <- function(df, month_selected) {
 #' - **Month-to-month change** in national values
 #' - **Funnel-plot variation indicators**, proportion of places outside the 95% and 99% limits
 #' - **Trendline data**, stored as a list-column of ordered values for each metric
-#'
 #'
 #' @param df T
 #' @param month_latest
@@ -1025,10 +1133,10 @@ get_national_dashboard_data <- function(df, month_latest, month_prev) {
   # get the trendline data
   df_trendline <-
     df_averages |>
-    dplyr::select(metric_id, metric_details, measure, month_zoo, value) |>
+    dplyr::select(metric_id, metric_details, value_type, month_zoo, value) |>
     dplyr::summarise(
       trendline = list(value[order(month_zoo)]),
-      .by = c(metric_id, metric_details, measure)
+      .by = c(metric_id, metric_details, value_type)
     )
 
   # combine the data
@@ -1059,12 +1167,6 @@ get_national_dashboard_data <- function(df, month_latest, month_prev) {
 
   return(df_dashboard)
 }
-
-# get_national_dashboard_data(
-#   df = df,
-#   month_latest = zoo::as.yearmon("2027-03"),
-#   month_prev = zoo::as.yearmon("2027-02")
-# )
 
 display_dashboard_national <- function(
   df,
@@ -1151,4 +1253,48 @@ display_dashboard_national <- function(
         )
       )
   )
+}
+
+
+#' Extract the list of available metric names
+#'
+#' @description
+#' Returns a tibble containing the distinct metric names available in the
+#' dataset. By default, this excludes metric `"P1"` (a count-only metric),
+#' but it can be included if required.
+#'
+#' @param df A tibble containing metric data.
+#' @param include_p1 Logical; if `FALSE` (default), metric `"P1"` is excluded from the returned list
+#'
+#' @returns A tibble with one row per metric, containing:
+#' - `metric_block`: the metric identifier
+#' - `metric_details`: the human-readable metric name
+#'
+#' @examples
+#' \dontrun{
+#' get_metric_names(df_metrics)
+#' get_metric_names(df_metrics, include_p1 = TRUE)
+#' }
+get_metric_names <- function(df, include_p1 = FALSE) {
+  # get the metric names as a separate tibble
+  df_metric_names <-
+    df |>
+    dplyr::filter(
+      demographic_type == "Total",
+      value_type == "rate_per_1000"
+    )
+
+  # exclude metric P1 (count only) unless specified
+  if (!include_p1) {
+    df_metric_names <-
+      df_metric_names |>
+      dplyr::filter(metric_id != "P1")
+  }
+
+  df_metric_names <-
+    df_metric_names |>
+    dplyr::select(metric_block, metric_details) |>
+    dplyr::distinct()
+
+  return(df_metric_names)
 }
