@@ -27,7 +27,9 @@ add_metric_column_to_df <- function(df) {
       metric,
       .by = metric_block,
       .direction = "up"
-    )
+    ) |>
+    # convert to a factor to speed up selections
+    dplyr::mutate(metric = metric |> factor())
 }
 
 #' Extract dashboard-ready metric summary for a given place and month
@@ -64,6 +66,13 @@ get_place_month_summary <- function(df, selected_month, selected_place = NULL) {
       dplyr::when_any(
         (metric_id == "P1" & value_type == "count"),
         (metric_id != "P1" & value_type == "rate_per_1000")
+      )
+    ) |>
+    # fill in any NA values for P1 (e.g. Portsmouth in Jan 2026)
+    dplyr::mutate(
+      value = dplyr::case_when(
+        (metric_id == "P1" & value_type == "count" & is.na(value)) ~ 0L,
+        .default = value
       )
     )
 
@@ -207,6 +216,14 @@ get_sparkline_data <- function(df, selected_place) {
       )
     ) |>
     dplyr::select(metric_id, metric_details, value_type, month_zoo, value) |>
+    # fill in missing trendline data with zeroes to avoid issues with
+    # {reactable} and {reactablefmtr} not displaying the whole table
+    dplyr::mutate(
+      value = dplyr::case_when(
+        (metric_id == "P1" & value_type == "count" & is.na(value)) ~ 0L,
+        .default = value
+      )
+    ) |>
     dplyr::summarise(
       trendline = list(value[order(month_zoo)]),
       .by = c(metric_id, metric_details, value_type)
@@ -415,6 +432,9 @@ display_dashboard <- function(df, place_selected, month_latest, month_prev) {
     place_selected = place_selected
   )
 
+  # troubleshooting
+  # test <<- df_dashboard
+
   # produce as a reactable table dashboard
   suppressWarnings(
     df_dashboard |>
@@ -469,7 +489,8 @@ display_dashboard <- function(df, place_selected, month_latest, month_prev) {
             minWidth = 150,
             maxWidth = 1000,
             cell = reactablefmtr::react_sparkline(
-              data = df_dashboard,
+              # data = _,
+              data = ~trendline,
               show_area = TRUE,
               line_color = "#5881c1",
               highlight_points = reactablefmtr::highlight_points(
@@ -481,7 +502,6 @@ display_dashboard <- function(df, place_selected, month_latest, month_prev) {
         ),
         theme = reactable::reactableTheme(
           style = list(
-            # fontFamily = "Aptos Display, Segoe UI, Helvetica, Arial, sans-serif"
             fontFamily = "Roboto, Arial, sans-serif"
           )
         )
@@ -507,7 +527,7 @@ display_dashboard <- function(df, place_selected, month_latest, month_prev) {
 #' - Pivots the data wider so that `patients`, `count` and `rate_per_1000`
 #'   appear on the same row for each metric.
 #'
-#' **2. Computer Poisson confidence limits**
+#' **2. Computes Poisson confidence limits**
 #' - Calculates the *overall national rate* for each metric
 #' - Computes the *expected count* under this overall rate
 #' - Uses the chi-square method to derive exact Poisson 95% and 99% limits
