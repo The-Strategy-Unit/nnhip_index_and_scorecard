@@ -65,7 +65,7 @@ ui <- function(request) {
             shiny::selectizeInput(
               inputId = "selected_metric",
               label = "Metric:",
-              choices = metrics,
+              choices = NULL, # will update this reactively in server.R
               multiple = FALSE
             )
           ),
