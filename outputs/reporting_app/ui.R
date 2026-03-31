@@ -22,13 +22,15 @@ ui <- function(request) {
       bslib::page_sidebar(
         # sidebar ----
         sidebar = bslib::sidebar(
-          # add some branding
-          shiny::hr(),
-          shiny::tags$div(
-            style = "text-align:center; padding: 10px 0;",
-            shiny::tags$img(
-              src = "logos/logo_black.svg",
-              style = "max-width: 120px; height: auto"
+          shiny::div(
+            # add some branding
+            shiny::hr(),
+            shiny::tags$div(
+              style = "text-align:center; padding: 10px 0;",
+              shiny::tags$img(
+                src = "logos/logo_black.svg",
+                style = "max-width: 120px; height: auto"
+              )
             )
           )
         ),
@@ -38,7 +40,7 @@ ui <- function(request) {
           bslib::nav_panel(
             title = "Overview",
             icon = bsicons::bs_icon("table"),
-            bslib::card_body(reactable::reactableOutput("national_table")),
+            bslib::card_body(reactable::reactableOutput("national_table"))
           )
         )
       )
@@ -51,51 +53,54 @@ ui <- function(request) {
       bslib::page_sidebar(
         # sidebar ----
         sidebar = bslib::sidebar(
-          # select a place (always visible)
-          shiny::selectizeInput(
-            inputId = "selected_place",
-            label = "Place:",
-            choices = places,
-            multiple = FALSE
-          ),
-
-          # select a metric (conditional)
-          shiny::conditionalPanel(
-            condition = "input.place_tabs == 'Funnel plot'",
+          shiny::div(
+            # select a place (always visible)
             shiny::selectizeInput(
-              inputId = "selected_metric",
-              label = "Metric:",
-              choices = metrics,
+              inputId = "selected_place",
+              label = "Place:",
+              # choices = places,
+              choices = NULL, # will update this reactively in server.R
               multiple = FALSE
-            )
-          ),
+            ),
 
-          # select a month (conditional)
-          shiny::conditionalPanel(
-            condition = "input.place_tabs == 'Funnel plot'",
-            shiny::selectizeInput(
-              inputId = "selected_month",
-              label = "Month:",
-              choices = months,
-              multiple = FALSE
-            )
-          ),
+            # select a metric (conditional)
+            shiny::conditionalPanel(
+              condition = "input.place_tabs == 'Funnel plot'",
+              shiny::selectizeInput(
+                inputId = "selected_metric",
+                label = "Metric:",
+                choices = NULL, # will update this reactively in server.R
+                multiple = FALSE
+              )
+            ),
 
-          # bookmark button
-          shiny::bookmarkButton(label = "Bookmark"),
+            # select a month (conditional)
+            shiny::conditionalPanel(
+              condition = "input.place_tabs == 'Funnel plot'",
+              shiny::selectizeInput(
+                inputId = "selected_month",
+                label = "Month:",
+                choices = NULL, # will update this reactively in server.R
+                multiple = FALSE
+              )
+            ),
 
-          # add some branding
-          shiny::hr(),
-          shiny::tags$div(
-            style = "text-align:center; padding: 10px 0;",
-            shiny::tags$img(
-              src = "logos/logo_black.svg",
-              style = "max-width: 120px; height: auto"
+            # bookmark button
+            shiny::bookmarkButton(label = "Bookmark"),
+
+            # add some branding
+            shiny::hr(),
+            shiny::tags$div(
+              style = "text-align:center; padding: 10px 0;",
+              shiny::tags$img(
+                src = "logos/logo_black.svg",
+                style = "max-width: 120px; height: auto"
+              )
             )
           )
         ),
-        # main ----
 
+        # main ----
         bslib::card(
           bslib::card_title(shiny::textOutput(outputId = "place_header")),
           bslib::navset_card_tab(
@@ -105,12 +110,24 @@ ui <- function(request) {
             bslib::nav_panel(
               title = "Dashboard table",
               icon = bsicons::bs_icon("table"),
-              bslib::card_body(reactable::reactableOutput("place_table")),
+              bslib::card_body(
+                reactable::reactableOutput("place_table"),
+                fill = TRUE
+              )
             ),
+
             bslib::nav_panel(
               title = "Funnel plot",
               icon = bsicons::bs_icon("funnel"),
-              plotly::plotlyOutput("place_funnel", height = "100%")
+              bslib::card_body(
+                plotly::plotlyOutput(
+                  "place_funnel",
+                  height = "100%",
+                  fill = TRUE
+                ),
+                fill = TRUE,
+                height = "100%"
+              )
             )
           )
         )
