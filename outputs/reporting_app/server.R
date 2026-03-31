@@ -34,8 +34,10 @@ server <- function(input, output, session) {
   # get a list of metrics
   filtered_metrics <- shiny::reactive({
     filtered_df() |>
-      dplyr::pull(metric_details) |>
-      dplyr::unique() |>
+      # keep only rows where we have a rate reported
+      dplyr::filter(value_type == "rate_per_1000", !is.na(value)) |>
+      dplyr::pull(metric) |>
+      unique() |>
       sort()
   })
 
@@ -61,6 +63,18 @@ server <- function(input, output, session) {
     },
     ignoreNULL = TRUE
   )
+
+  # observers -----------------------------------------------------------------
+
+  # update the available metrics based on the filtered data
+  shiny::observe({
+    shiny::updateSelectizeInput(
+      session = session,
+      inputId = "selected_metric",
+      choices = filtered_metrics(),
+      server = TRUE
+    )
+  })
 
   # outputs -------------------------------------------------------------------
   ## national outputs ----
