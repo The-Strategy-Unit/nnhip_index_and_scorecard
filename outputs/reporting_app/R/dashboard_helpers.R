@@ -87,7 +87,7 @@ get_place_month_summary <- function(df, selected_month, selected_place = NULL) {
 #'
 #' @examples
 #' \dontrun{
-#' summarise_place_average(
+#' summarise_averages(
 #'   df = df,
 #'   selected_place = "West Essex"
 #' )
@@ -99,10 +99,23 @@ summarise_averages <- function(df, selected_place = NULL) {
   # filter to total breakdown and remove pre-calculated rates
   df_temp <-
     df |>
-    dplyr::filter(
-      demographic_type == "Total",
-      value_type != "rate_per_1000" # remove pre-calculated rates
-    )
+    dplyr::filter(demographic_type == "Total") |>
+    # handle suppressed `counts` - we need at least an estimate of the number
+    # of people in order to correctly work out the average rate
+    dplyr::mutate(
+      rate_block = value[value_type == "rate_per_1000"],
+      patients_block = value[value_type == "patients"],
+      value = dplyr::case_when(
+        value_suppressed & value_type == "count" ~
+          (rate_block / 1000) * patients_block,
+        .default = value
+      ),
+      .by = c(place, month_zoo, metric_block)
+    ) |>
+    # remove the newly created fields
+    dplyr::select(-c(rate_block, patients_block, value_suppressed)) |>
+    # filter out pre-calculated rates
+    dplyr::filter(value_type != "rate_per_1000")
 
   # if a place is selected then filter to that place
   if (!is.null(selected_place)) {
@@ -637,6 +650,9 @@ get_funnel_plot <- function(
   metric_selected,
   month_selected
 ) {
+  # ensure the funnel data excludes NA values
+  df_funnel <- df_funnel |> dplyr::filter(!is.na(rate_per_1000))
+
   # prepare some data ---
   # get the last data point (for labelling the limits)
   df_last <-
@@ -654,8 +670,8 @@ get_funnel_plot <- function(
   # create smooth limits for the 99% and 95% limit lines
   df_limits <- tibble::tibble(
     patients = seq(
-      from = min(df_funnel$patients),
-      to = max(df_funnel$patients),
+      from = min(df_funnel$patients, na.rm = TRUE),
+      to = max(df_funnel$patients, na.rm = TRUE),
       length.out = 400
     )
   )
@@ -895,10 +911,6 @@ national_monthly_averages <- function(df) {
 
   # get the metric names
   df_metric_names <- get_metric_names(df = df)
-  # df |>
-  # dplyr::filter(demographic_type == "Total", value_type == "rate_per_1000") |>
-  # dplyr::select(metric_block, metric_details) |>
-  # dplyr::distinct()
 
   # outcome metrics: compute rate_per_1000 from summed numerator + denominator
   df_outcomes <-
@@ -999,15 +1011,6 @@ national_monthly_averages <- function(df) {
 #' }
 get_data_for_funnel_plot_national <- function(df, month_selected) {
   # get the metric names as a separate tibble
-  # df_metric_names <-
-  #   df |>
-  #   dplyr::filter(
-  #     demographic_type == "Total",
-  #     value_type == "rate_per_1000",
-  #     metric_id != "P1"
-  #   ) |>
-  #   dplyr::select(metric_block, metric_details) |>
-  #   dplyr::distinct()
   df_metric_names <- get_metric_names(df = df)
 
   # work out the limits and categorise
@@ -1113,41 +1116,46 @@ get_national_dashboard_data <- function(df, month_latest, month_prev) {
     df_averages |>
     dplyr::filter(month_zoo == month_prev)
 
-  # get funnel plot data (to work out numbers outside of limits)
+  # get funnel plot data (to work out number of places outside of limits)
   df_funnel <-
-    get_data_for_funnel_plot_national(df = df, month_selected = month_latest) |>
-    # get the number of places in total and those outside the limits
-    dplyr::summarise(
-      place_count = dplyr::n_distinct(place, na.rm = TRUE),
-      place_outside_limit = dplyr::n_distinct(
-        place[marker_category %in% c("Outside 95%", "Outside 99%")],
-        na.rm = TRUE
-      ),
-      .by = c(metric_details)
+    df |>
+    dplyr::filter(month_zoo == month_latest) |>
+    dplyr::distinct(metric) |>
+    dplyr::pull(metric) |>
+    purrr::map_dfr(
+      .f = \(.x) {
+        get_data_for_funnel_plot(
+          df = df,
+          month_selected = month_latest,
+          metric_selected = .x
+        )
+      }
     ) |>
-    # work out the proportion of places outside of limit
-    dplyr::mutate(
-      place_outside_limit_rate = place_outside_limit / place_count
+    dplyr::summarise(
+      n_places = dplyr::n(),
+      n_outside = sum(marker_category != "Within 95%"),
+      place_outside_limit_rate = n_outside / n_places,
+      .by = metric_block
     )
 
   # get the trendline data
   df_trendline <-
     df_averages |>
-    dplyr::select(metric_id, metric_details, value_type, month_zoo, value) |>
+    dplyr::select(metric_id, metric_block, value_type, month_zoo, value) |>
     dplyr::summarise(
       trendline = list(value[order(month_zoo)]),
-      .by = c(metric_id, metric_details, value_type)
+      .by = c(metric_id, metric_block, value_type)
     )
 
   # combine the data
   df_dashboard <-
     df_dash_month_curr |>
-    dplyr::select(metric_details, month_current = value) |>
+    dplyr::select(metric_block, metric_details, month_current = value) |>
     # add in previous month's values and work out the difference
     dplyr::left_join(
       y = df_dash_month_prev |>
-        dplyr::select(metric_details, month_previous = value),
-      by = dplyr::join_by(x$metric_details == y$metric_details)
+        dplyr::select(metric_block, month_previous = value),
+      by = dplyr::join_by(x$metric_block == y$metric_block)
     ) |>
     dplyr::mutate(
       month_diff = month_current - month_previous
@@ -1155,24 +1163,45 @@ get_national_dashboard_data <- function(df, month_latest, month_prev) {
     # add in funnel data
     dplyr::left_join(
       y = df_funnel |>
-        dplyr::select(metric_details, place_outside_limit_rate),
-      by = dplyr::join_by(x$metric_details == y$metric_details)
+        dplyr::select(metric_block, place_outside_limit_rate),
+      by = dplyr::join_by(x$metric_block == y$metric_block)
     ) |>
     # add in trendline
     dplyr::left_join(
       y = df_trendline |>
-        dplyr::select(metric_details, trendline),
-      by = dplyr::join_by(x$metric_details == y$metric_details)
-    )
+        dplyr::select(metric_block, trendline),
+      by = dplyr::join_by(x$metric_block == y$metric_block)
+    ) |>
+    # remove `metric_block` as no longer needed
+    dplyr::select(-c(metric_block))
 
   return(df_dashboard)
 }
 
-display_dashboard_national <- function(
-  df,
-  month_latest,
-  month_prev
-) {
+#' Display the national dashboard
+#'
+#' @description
+#' Generates an interactive national-level dashboard table using `{reactable}`
+#' and `{reactablefmtr}`.
+#' The function first prepares the underlying dataset via
+#' `get_national_dashboard_data()`, then renders a styled dashboard containing
+#' key monthly metrics, differences, data bars and trendlines.
+#'
+#' @param df A data frame containing the raw input data from which national-level dashboard metrics will be derived
+#' @param month_latest A zoo::yearmon() object indicating the most recent reporting month to display
+#' @param month_prev A zoo::yearmon() object indicating the comparison month (typically the month preceding `month_latest`)
+#'
+#' @returns A `reactable` widget representing the national dashboard.
+#'
+#' @examples
+#' \dontrun{
+#' display_dashboard_national(
+#'   df = my_data,
+#'   month_latest = zoo::as.yearmon("Mar 2026"),
+#'   month_prev = zoo::as.yearmon("Feb 2026")
+#' )
+#' }
+display_dashboard_national <- function(df, month_latest, month_prev) {
   # get the data
   df_dashboard <- get_national_dashboard_data(
     df = df,
