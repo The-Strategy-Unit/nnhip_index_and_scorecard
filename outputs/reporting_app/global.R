@@ -5,6 +5,11 @@ shiny::enableBookmarking("server")
 # load in helper functions
 source("R/dashboard_helpers.R")
 
+# packages --------------------------------------------------------------------
+# add packages which are required for the app to work when deployed
+# but aren't called directly
+library(brand.yml)
+library(dataui)
 
 # data ------------------------------------------------------------------------
 # test data ----
@@ -26,8 +31,15 @@ source("R/dashboard_helpers.R")
 server <- Sys.getenv("posit_server")
 account <- Sys.getenv("posit_account")
 prefix <- Sys.getenv("pin_prefix")
+api_key <- Sys.getenv("posit_api_key")
 
-board <- pins::board_connect(server = server, account = account)
+board <- pins::board_connect(
+  # auth = "rsconnect",
+  auth = "manual",
+  server = server,
+  # account = account,
+  key = api_key
+)
 pin_name <- glue::glue("{prefix}all")
 
 # global cache
@@ -41,23 +53,3 @@ df <- df |>
     month_zoo = zoo::as.yearmon(month_zoo)
   )
 df_version <- meta$version
-
-# df <<- NULL
-# df_version <<- NULL
-
-# read the pin containing the accumulated monthly records
-# df <- pins::pin_read(board = board, name = glue::glue("{prefix}all"))
-
-# ensure we have a 'metric' column that covers each of the three components of the metric
-# df <- add_metric_column_to_df(df = df)
-
-# extract require details
-
-# # get a list of places
-# places <- df$place |> unique() |> sort()
-
-# # get a list of metrics
-# metrics <- df$metric |> unique()
-
-# # get a list of months
-# months <- df$month_zoo |> unique() |> sort(decreasing = TRUE)
