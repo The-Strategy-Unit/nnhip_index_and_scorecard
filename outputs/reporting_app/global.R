@@ -34,22 +34,20 @@ prefix <- Sys.getenv("pin_prefix")
 api_key <- Sys.getenv("posit_api_key")
 
 board <- pins::board_connect(
-  # auth = "rsconnect",
   auth = "manual",
   server = server,
-  # account = account,
   key = api_key
 )
 pin_name <- glue::glue("{prefix}all")
 
-# global cache
-meta <- pins::pin_meta(board = board, name = pin_name)
-df <- pins::pin_read(board = board, name = pin_name)
+# # global cache
+# meta <- pins::pin_meta(board = board, name = pin_name)
+# df <- pins::pin_read(board = board, name = pin_name)
 
-df <- df |>
-  add_metric_column_to_df() |>
-  dplyr::mutate(
-    place = place |> factor(levels = sort(unique(place))),
-    month_zoo = zoo::as.yearmon(month_zoo)
-  )
-df_version <- meta$version
+# df <- df |>
+#   add_metric_column_to_df() |>
+#   dplyr::mutate(
+#     place = place |> factor(levels = sort(unique(place))),
+#     month_zoo = zoo::as.yearmon(month_zoo)
+#   )
+# df_version <- meta$version
