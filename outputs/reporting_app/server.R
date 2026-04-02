@@ -7,16 +7,23 @@ server <- function(input, output, session) {
     interval = 60 * 60 * 1000 # check hourly
   )
 
+  # read the pin version for use as a cache key
+  df_version <- shiny::reactive(
+    pins::pin_meta(board = board, name = pin_name)$version
+  )
+
   # pre-process the data ------------------------------------------------------
   df <- shiny::reactive({
     req(df_raw())
 
+    # process the data to make it ready for use in the app
     df_raw() |>
+      # ensure there is a consistent 'metric' for each block of values
       add_metric_column_to_df() |>
-      dplyr::mutate(
-        place = place |> factor(levels = sort(unique(place))),
-        month_zoo = month_zoo |> zoo::as.yearmon()
-      )
+      # ensure counts below threshold are suppressed
+      suppress_counts() |>
+      # prepare columns for use in select inputs
+      factorise_columns()
   })
 
   # derived lists for UI inputs -----------------------------------------------
@@ -163,7 +170,7 @@ server <- function(input, output, session) {
       metric_selected = input$selected_metric
     )
   }) |>
-    shiny::bindCache(input$selected_month, input$selected_metric)
+    shiny::bindCache(df_version(), input$selected_month, input$selected_metric)
 
   # cache limits data for month:metric for improved UX ---
   df_limits <- shiny::reactive({
@@ -171,7 +178,7 @@ server <- function(input, output, session) {
 
     compute_funnel_limits(df_funnel = df_funnel())
   }) |>
-    shiny::bindCache(input$selected_month, input$selected_metric)
+    shiny::bindCache(df_version(), input$selected_month, input$selected_metric)
 
   # render the funnel ---
   output$place_funnel <- plotly::renderPlotly({
@@ -190,20 +197,4 @@ server <- function(input, output, session) {
       month_selected = input$selected_month |> zoo::as.yearmon()
     )
   })
-
-  # # prepare funnel plot data
-  # # funnel_data <- shiny::reactiveVal(NULL)
-  # # shiny::observeEvent(
-  # #   list(filtered_df(), input$selected_month, input$selected_metric),
-  # #   {
-  # #     req(filtered_df(), input$selected_month, input$selected_metric)
-  # #     df_processed <- get_data_for_funnel_plot(
-  # #       df = filtered_df(),
-  # #       month_selected = input$selected_month,
-  # #       metric_selected = input$selected_metric
-  # #     )
-  # #     funnel_data(df_processed)
-  # #   },
-  # #   ignoreNULL = TRUE
-  # # )
 }
