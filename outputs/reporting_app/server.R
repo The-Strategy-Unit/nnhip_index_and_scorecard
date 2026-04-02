@@ -131,11 +131,19 @@ server <- function(input, output, session) {
   ## national dashboard -------------------------------------------------------
   output$national_table <- reactable::renderReactable({
     req(df(), filtered_month_current(), filtered_month_previous())
+
     display_dashboard_national(
       df = df(),
       month_latest = filtered_month_current(),
       month_prev = filtered_month_previous()
     )
+  })
+
+  ## national data coverage ---------------------------------------------------
+  output$national_data_coverage_table <- reactable::renderReactable({
+    req(df())
+
+    display_national_data_coverage_table(df = df())
   })
 
   ## place dashboard ----------------------------------------------------------
