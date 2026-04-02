@@ -8,13 +8,12 @@
 #' This function creates a new `metric` column based on `value_type` and fills
 #' the metric description upward within each `metric_block`.
 #'
-#' @param df A data frame loaded from a Connect Pin, which contains the
+#' @param df_raw A data frame loaded from a Connect Pin, which contains the
 #' combined monthly aggregate data submissions for the NNHIP project
 #'
 #' @returns A data frame with an added and filled `metric` column
-add_metric_column_to_df <- function(df) {
-  df_return <-
-    df |>
+add_metric_column_to_df <- function(df_raw) {
+  df_raw |>
     dplyr::mutate(
       # create a new column called 'metric' which uses the metric details rate description
       metric = dplyr::case_when(
@@ -30,6 +29,121 @@ add_metric_column_to_df <- function(df) {
     ) |>
     # convert to a factor to speed up selections
     dplyr::mutate(metric = metric |> factor())
+}
+
+#' Suppress small counts and flag affected metric blocks
+#'
+#' @description
+#' Applies disclosure control rules to a long-format dataset by:
+#' - Marking any count below a specified threshold as suppressed
+#' - Replacing suppressed counts int he `value` column with `NA_integer_`
+#' - Propagating suppression flags within each `metric_block`
+#'
+#' This function is designed for datasets where each metric is represented by
+#' multiple rows (e.g., `count`, `patients`, `rate_per_1000`), and where small
+#' counts must be suppressed before further processing or reshaping.
+#'
+#' @details
+#' The function performs three key operations:
+#'
+#' **1. Update the `value_suppressed` flag**
+#' - If a row already has `value_suppressed == TRUE`, it remains suppressed
+#' - If `value_type == "count"` and the count is below `suppression_threshold`,
+#'   the row is marked as suppressed
+#'
+#' **2. Replace suppressed counts in `value`**
+#' - Only rows where `value_type == "count"` and the count is below the
+#'   threshold are overwritten with `NA_integer_`
+#' - Other value types (e.g., `patients`, `rate_per_1000`) are left unchanged
+#'
+#' **3. Flag entire metric blocks**
+#' - A new logical column `count_suppressed` is added
+#' - It is `TRUE` for all rows in a `metric_block` if *any* row in that block
+#'   has `value_suppressed == TRUE`
+#'
+#' This block-level flag is especially useful before pivoting wider, since
+#' `value_suppressed` typically needs to be dropped during reshaping.
+#'
+#' @param df_raw A tibble of metrics
+#' @param suppression_threshold Integer threshold below which counts should be
+#' suppressed. Defaults to `6L`, consistent with common disclosure control rules
+#'
+#' @returns
+#' A tibble with the same rows as `df_raw`, but with:
+#' - updated `value_suppressed` flags
+#' - suppressed counts replaced with `NA_integer_` in `value`
+#' - a new column `count_suppressed` indicating whether any count in the
+#'   `metric_block` was suppressed
+#'
+#' @examples
+#' \dontrun{
+#' df_clean <- suppress_counts(df_raw)
+#' }
+suppress_counts <- function(df_raw, suppression_threshold = 6L) {
+  df_raw |>
+    # ensure counts are suppressed
+    dplyr::mutate(
+      .by = c(metric_block, demographic_type, demographic_value),
+
+      # precompute whether this row should be suppressed
+      is_small_count = value_type == "count" & value < suppression_threshold,
+
+      # update suppression flag
+      value_suppressed = value_suppressed | is_small_count,
+
+      # suppress the value itself
+      value = dplyr::if_else(
+        condition = is_small_count,
+        true = NA_integer_,
+        false = value
+      ),
+
+      # flag the entire block if any row was suppressed
+      count_suppressed = any(value_suppressed)
+    ) |>
+    dplyr::select(-is_small_count)
+}
+
+#' Prepare key columns for filtering and time-based operations
+#'
+#' @description
+#' Ensures that two commonly-used columns in the dashboard are stored in the
+#' most appropriate formats for efficient filtering and display:
+#' - `place` is converted to a factor with levels sorted alphabetically
+#' - `month_zoo` is coerced to a `zoo::yearmon` object for reliable
+#'   month-based comparisons and ordering
+#'
+#' This preprocessing step is useful when the dataset is read from a pin or
+#' external source where column types may not be preserved consistently.
+#'
+#' @details
+#' Converting `place` to a factor:
+#' - stabilises the ordering of choices in `selectizeInput()`
+#' - avoids repeated sorting inside reactives
+#' - ensures consistent behaviour when filtering by place
+#'
+#' Converting `month_zoo` to `yearmon`:
+#' - guarantees correct chronological ordering
+#' - avoids issues where the column is read as character or numeric
+#' - ensures comparability with downstream time-based operations
+#'
+#' @param df_raw A tibble containing metric data
+#'
+#' @returns
+#' A tibble with the same rows as `df_raw`, but with:
+#' - `place` stored as a factor with sorted levels
+#' - `month_zoo` stored as `zoo::yearmon` object
+#'
+#' @examples
+#' \dontrun{
+#' df_clean <- factorise_columns(df_raw)
+#' }
+factorise_columns <- function(df_raw) {
+  df_raw |>
+    dplyr::mutate(
+      place = place |> factor(levels = sort(unique(place))),
+      month_zoo = month_zoo |> zoo::as.yearmon()
+    )
 }
 
 #' Extract dashboard-ready metric summary for a given place and month
@@ -561,7 +675,7 @@ get_data_for_funnel_plot <- function(df, month_selected, metric_selected) {
   df_return <-
     df |>
     # exclude the metric_details column (this will adversely affect the below pivot)
-    dplyr::select(-c(metric_details)) |>
+    dplyr::select(-c(metric_details, value_suppressed)) |>
     # filter the data for the specified month and metric
     dplyr::filter(
       month_zoo == month_selected,
@@ -573,6 +687,8 @@ get_data_for_funnel_plot <- function(df, month_selected, metric_selected) {
       names_from = value_type,
       values_from = value
     ) |>
+    # remove records where there is no numerator data
+    dplyr::filter_out(is.na(count)) |>
     # work out some measures
     dplyr::mutate(
       .by = c(metric_block),
@@ -615,10 +731,20 @@ get_data_for_funnel_plot <- function(df, month_selected, metric_selected) {
         factor(levels = c("Outside 99%", "Outside 95%", "Within 95%")),
 
       # draft hover text for the points
+      hover_count = dplyr::if_else(
+        condition = count_suppressed,
+        true = "Below 6",
+        false = prettyunits::pretty_round(count, digits = 0) |> as.character()
+      ),
+      # hover_count = "test",
+      hover_patients = prettyunits::pretty_round(patients, digits = 0) |>
+        as.character(),
+      hover_rate = prettyunits::pretty_round(rate_per_1000, digits = 1) |>
+        as.character(),
       hover_text = glue::glue(
         "<b>{place}</b><br>",
-        "{prettyunits::pretty_round(count, digits = 0)} / {prettyunits::pretty_round(patients, digits = 0)}<br>",
-        "Rate per 1,000 = {prettyunits::pretty_round(rate_per_1000, digits = 1)}"
+        "{hover_count} / {hover_patients}<br>",
+        "Rate per 1,000 = {hover_rate}"
       )
     )
 
@@ -680,52 +806,19 @@ get_funnel_plot <- function(
     df_funnel |>
     dplyr::slice_max(order_by = patients)
 
-  # get a title for the chart
-  str_title <- glue::glue("{metric_selected} | {month_selected}")
+  # get a title for the chart (ensure it fits in the plot area)
+  str_title <- glue::glue("{metric_selected} | {month_selected}") |>
+    as.character() |>
+    stringr::str_wrap(width = 100) |>
+    stringr::str_replace_all(pattern = "\n", replacement = "<br>")
 
   # get data for the selected place
   df_place <-
     df_funnel |>
     dplyr::filter(place == place_selected)
 
-  # # create smooth limits for the 99% and 95% limit lines
-  # df_limits <- tibble::tibble(
-  #   patients = seq(
-  #     from = min(df_funnel$patients, na.rm = TRUE),
-  #     to = max(df_funnel$patients, na.rm = TRUE),
-  #     length.out = 400
-  #   )
-  # )
-
   # # compute the expected counts using the overall rate
   overall_rate <- df_funnel$overall_rate |> unique()
-
-  # df_limits <-
-  #   df_limits |>
-  #   dplyr::mutate(
-  #     expected = patients * overall_rate,
-
-  #     # Poisson limits for expected counts
-  #     lower_95 = 0.5 *
-  #       stats::qchisq(p = 0.025, df = 2 * expected) /
-  #       patients *
-  #       1000,
-  #     upper_95 = 0.5 *
-  #       stats::qchisq(p = 0.975, df = 2 * (expected + 1)) /
-  #       patients *
-  #       1000,
-
-  #     lower_99 = 0.5 *
-  #       stats::qchisq(p = 0.005, df = 2 * expected) /
-  #       patients *
-  #       1000,
-  #     upper_99 = 0.5 *
-  #       stats::qchisq(p = 0.995, df = 2 * (expected + 1)) /
-  #       patients *
-  #       1000,
-
-  #     central = overall_rate * 1000
-  #   )
 
   # prepare formatting options ---
   colour_95_limit <- list(
@@ -865,7 +958,7 @@ get_funnel_plot <- function(
         title = "Rate per 1,000",
         zeroline = FALSE
       ),
-      title = str_title,
+      title = list(text = str_title),
       font = list(family = "Roboto, Arial, sans-serif", size = 16),
       showlegend = FALSE,
       margin = list(l = 40, r = 40, t = 100, b = 60)
@@ -1384,4 +1477,101 @@ get_metric_names <- function(df, include_p1 = FALSE) {
     dplyr::distinct()
 
   return(df_metric_names)
+}
+
+#' Display a national data coverage table
+#'
+#' @description
+#' Creates a dashboard-friendly table showing which Places have processed data
+#' available for each month. The table is structured with Places as rows and
+#' months as columns, with each cell indicating whether data for that
+#' Place-month combination is present in the processed dataset.
+#'
+#' This view is intended to provide a clear overview of **data coverage**
+#' across all expected Places, highlighting gaps where processed data is missing.
+#'
+#' @details
+#' The function performs the following steps:
+#'
+#' **1. Define expected Places**
+#' Uses a fixed vector of Places (created in `global.R`) to ensure the table
+#' includes all Places from which dadta is expected, even if no processed data
+#' is present for a given month.
+#'
+#' **2. Construct a complete Place x Month grid**
+#' All combinations of expected Places and observed months are generated using
+#' `tidyr::expand_grid()`.
+#'
+#' **3. Identify processed submissions**
+#' The input dataset is reduced to distict Place-month pairs, which represent
+#' processed submissions. These are marked with a check symbol (`"✔️"`).
+#'
+#' **4. Join and reshape**
+#' The processed submissions are left-joined onto the full grid, then pivoted
+#' wider so that each month becomes a column. Missing submissions are represented
+#' by empty strings.
+#'
+#' **5. Render a reactable table**
+#' The resulting wide-format table is displayed using `{reactable}`, with:
+#' - Places as sticky left-hand column
+#' - Months as columns
+#' - Checkmarks indicating processed data
+#' - Search, sorting, highlighting and responsive resizing enabled
+#'
+#' @param df A tibble of metric information
+#'
+#' @returns A `reactable` widget displaying a Place x Month data coverage matrix.
+#'
+#' @examples
+#' \dontrun{
+#' display_national_data_coverage_table(df)
+#' }
+display_national_data_coverage_table <- function(df) {
+  # get a matrix of submissions from each place
+  all_months <- df$month_zoo |> unique() |> sort()
+
+  # get all combinations of place and month
+  submission_grid <- tidyr::expand_grid(
+    place = expected_places,
+    month_zoo = all_months
+  )
+
+  # get a summary of received & processed submissions
+  submissions_received <- df |>
+    dplyr::distinct(place, month_zoo) |>
+    dplyr::mutate(received = "✔️")
+
+  # join in received data
+  submission_status <- submission_grid |>
+    dplyr::left_join(
+      y = submissions_received,
+      by = c("place", "month_zoo")
+    ) |>
+    # dplyr::mutate(received = !is.na(received)) |>
+    tidyr::pivot_wider(
+      names_from = month_zoo,
+      values_from = received,
+      values_fill = ""
+    )
+
+  # render with reactable
+  reactable::reactable(
+    data = submission_status,
+    pagination = FALSE,
+    searchable = TRUE,
+    sortable = TRUE,
+    highlight = TRUE,
+    resizable = TRUE,
+    defaultColDef = reactable::colDef(
+      minWidth = 45
+    ),
+    columns = list(
+      place = reactable::colDef(sticky = "left", name = "Place", minWidth = 200)
+    ),
+    theme = reactable::reactableTheme(
+      style = list(
+        fontFamily = "Roboto, Arial, sans-serif"
+      )
+    )
+  )
 }
