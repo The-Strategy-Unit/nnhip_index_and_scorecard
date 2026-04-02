@@ -666,6 +666,7 @@ get_data_for_funnel_plot <- function(df, month_selected, metric_selected) {
 #' }
 get_funnel_plot <- function(
   df_funnel,
+  df_limits,
   place_selected,
   metric_selected,
   month_selected
@@ -687,44 +688,44 @@ get_funnel_plot <- function(
     df_funnel |>
     dplyr::filter(place == place_selected)
 
-  # create smooth limits for the 99% and 95% limit lines
-  df_limits <- tibble::tibble(
-    patients = seq(
-      from = min(df_funnel$patients, na.rm = TRUE),
-      to = max(df_funnel$patients, na.rm = TRUE),
-      length.out = 400
-    )
-  )
+  # # create smooth limits for the 99% and 95% limit lines
+  # df_limits <- tibble::tibble(
+  #   patients = seq(
+  #     from = min(df_funnel$patients, na.rm = TRUE),
+  #     to = max(df_funnel$patients, na.rm = TRUE),
+  #     length.out = 400
+  #   )
+  # )
 
-  # compute the expected counts using the overall rate
+  # # compute the expected counts using the overall rate
   overall_rate <- df_funnel$overall_rate |> unique()
 
-  df_limits <-
-    df_limits |>
-    dplyr::mutate(
-      expected = patients * overall_rate,
+  # df_limits <-
+  #   df_limits |>
+  #   dplyr::mutate(
+  #     expected = patients * overall_rate,
 
-      # Poisson limits for expected counts
-      lower_95 = 0.5 *
-        stats::qchisq(p = 0.025, df = 2 * expected) /
-        patients *
-        1000,
-      upper_95 = 0.5 *
-        stats::qchisq(p = 0.975, df = 2 * (expected + 1)) /
-        patients *
-        1000,
+  #     # Poisson limits for expected counts
+  #     lower_95 = 0.5 *
+  #       stats::qchisq(p = 0.025, df = 2 * expected) /
+  #       patients *
+  #       1000,
+  #     upper_95 = 0.5 *
+  #       stats::qchisq(p = 0.975, df = 2 * (expected + 1)) /
+  #       patients *
+  #       1000,
 
-      lower_99 = 0.5 *
-        stats::qchisq(p = 0.005, df = 2 * expected) /
-        patients *
-        1000,
-      upper_99 = 0.5 *
-        stats::qchisq(p = 0.995, df = 2 * (expected + 1)) /
-        patients *
-        1000,
+  #     lower_99 = 0.5 *
+  #       stats::qchisq(p = 0.005, df = 2 * expected) /
+  #       patients *
+  #       1000,
+  #     upper_99 = 0.5 *
+  #       stats::qchisq(p = 0.995, df = 2 * (expected + 1)) /
+  #       patients *
+  #       1000,
 
-      central = overall_rate * 1000
-    )
+  #     central = overall_rate * 1000
+  #   )
 
   # prepare formatting options ---
   colour_95_limit <- list(
@@ -873,6 +874,43 @@ get_funnel_plot <- function(
 
   # return the plot
   return(p)
+}
+
+compute_funnel_limits <- function(df_funnel) {
+  # get the overall rate
+  overall_rate <- df_funnel$overall_rate |> unique()
+
+  # create smooth lmits for the 99% and 95% limit lines
+  df_limits <- tibble::tibble(
+    patients = seq(
+      from = min(df_funnel$patients, na.rm = TRUE),
+      to = max(df_funnel$patients, na.rm = TRUE),
+      length.out = 400
+    )
+  ) |>
+    dplyr::mutate(
+      expected = patients * overall_rate,
+      # Poisson limits for expected counts
+      lower_95 = 0.5 *
+        stats::qchisq(p = 0.025, df = 2 * expected) /
+        patients *
+        1000,
+      upper_95 = 0.5 *
+        stats::qchisq(p = 0.975, df = 2 * (expected + 1)) /
+        patients *
+        1000,
+
+      lower_99 = 0.5 *
+        stats::qchisq(p = 0.005, df = 2 * expected) /
+        patients *
+        1000,
+      upper_99 = 0.5 *
+        stats::qchisq(p = 0.995, df = 2 * (expected + 1)) /
+        patients *
+        1000,
+
+      central = overall_rate * 1000
+    )
 }
 
 #' Compute national monthly averages for outcome and process metrics

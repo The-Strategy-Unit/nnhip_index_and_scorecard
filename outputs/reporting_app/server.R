@@ -1,60 +1,43 @@
+# server ----------------------------------------------------------------------
 server <- function(input, output, session) {
-  # manage data connection ----------------------------------------------------
-  # set up reactive values for the main data input
-  # df <- shiny::reactiveVal()
-  # pin_version <- shiny::reactiveVal()
-  df_places <- shiny::reactiveVal()
-  df_metrics <- shiny::reactiveVal()
-  df_months <- shiny::reactiveVal()
+  # read pin reactively every hour --------------------------------------------
+  df_raw <- pins::pin_reactive_read(
+    board = board,
+    name = pin_name,
+    interval = 60 * 60 * 1000 # check hourly
+  )
 
-  # monitor for changes to the pin version
-  shiny::observe({
-    shiny::invalidateLater(60 * 60 * 1000) # check every hour
-    meta <- pins::pin_meta(board = board, name = pin_name) # board and pin loaded in global.R
+  # pre-process the data ------------------------------------------------------
+  df <- shiny::reactive({
+    req(df_raw())
 
-    # If first load OR version changed, then refresh df
-    if (is.null(df_version) || meta$version != df_version) {
-      message("Refreshing NNHIP aggregate data ...")
-
-      # update the main data source for this dashboard
-      df_temp <- pins::pin_read(board = board, name = pin_name)
-
-      # add the metric column to df (to aid metric selection)
-      df_temp <- df_temp |>
-        add_metric_column_to_df() |>
-        # speed up place filters
-        dplyr::mutate(
-          place = place |> factor(levels = df_temp$place |> unique() |> sort()),
-          month_zoo = zoo::as.yearmon(month_zoo)
-        )
-
-      # troubleshooting
-      # dplyr::glimpse(df_temp)
-
-      # assign this globally (so all users can access up-dated information)
-      df <<- df_temp
-      df_version <<- meta$version
-
-      # update the lists of places, metrics and months
-      df_places(df$place |> unique() |> sort() |> factor())
-      df_metrics(df$metric |> unique() |> factor())
-      df_months(
-        df$month_zoo |> unique() |> sort(decreasing = TRUE) |> zoo::yearmon()
+    df_raw() |>
+      add_metric_column_to_df() |>
+      dplyr::mutate(
+        place = place |> factor(levels = sort(unique(place))),
+        month_zoo = month_zoo |> zoo::as.yearmon()
       )
-    }
   })
 
-  # reactives -----------------------------------------------------------------
+  # derived lists for UI inputs -----------------------------------------------
+  df_places <- shiny::reactive({
+    df()$place |> unique() |> sort() |> factor()
+  })
 
+  df_metrics <- shiny::reactive({
+    df()$metric |> unique() |> factor()
+  })
+
+  df_months <- shiny::reactive({
+    df()$month_zoo |> unique() |> sort(decreasing = TRUE) |> zoo::yearmon()
+  })
+
+  # filtering reactives -------------------------------------------------------
   # update the df for the selected place
-  filtered_df <- shiny::reactive({
-    # ensure a place is selected
-    req(df, input$selected_place)
+  df_selected_place <- shiny::reactive({
+    req(df(), input$selected_place)
 
-    # filter df for records
-    out <- df |> dplyr::filter(place == input$selected_place)
-
-    # guard against empty results
+    out <- df() |> dplyr::filter(place == input$selected_place)
     req(nrow(out) > 0)
 
     return(out)
@@ -62,23 +45,21 @@ server <- function(input, output, session) {
 
   # update the df for the selected month (useful for funnel plots)
   df_selected_month <- shiny::reactive({
-    # ensure a month is selected
-    req(df, input$selected_month)
+    req(df(), input$selected_month)
 
-    # filter df for the selected month
     sel_month <- input$selected_month |> zoo::as.yearmon()
-    out <- df |>
-      dplyr::filter(month_zoo == sel_month)
 
-    # guard against empty results
+    out <- df() |> dplyr::filter(month_zoo == sel_month)
     req(nrow(out) > 0)
 
     return(out)
   })
 
-  # get a list of months
+  # list of months for the selected place
   filtered_months <- shiny::reactive({
-    filtered_df() |>
+    req(df_selected_place())
+
+    df_selected_place() |>
       dplyr::pull(month_zoo) |>
       unique() |>
       sort() |>
@@ -87,62 +68,30 @@ server <- function(input, output, session) {
 
   # get the latest / current month
   filtered_month_current <- shiny::reactive({
-    filtered_months() |>
-      tail(n = 1L)
+    req(filtered_months())
+
+    filtered_months() |> tail(n = 1L)
   })
 
   # get the month before the current one
   filtered_month_previous <- shiny::reactive({
-    filtered_months() |>
-      tail(n = 2L) |>
-      min()
+    req(filtered_months())
+
+    filtered_months() |> tail(n = 2L) |> min()
   })
 
   # get a list of metrics
   filtered_metrics <- shiny::reactive({
-    filtered_df() |>
-      # keep only rows where we have a rate reported
-      # dplyr::filter(value_type == "rate_per_1000", !is.na(value)) |>
+    req(df_selected_place())
+
+    df_selected_place() |>
       dplyr::pull(metric) |>
       unique() |>
       factor()
   })
 
-  # update the df for the latest two months
-  # latest_df <- shiny::reactive({
-  #   latest_months <- filtered_months() |> sort() |> tail(n = 2L)
-  #   df() |> dplyr::filter(month_zoo %in% latest_months)
-  # })
-
-  # prepare funnel plot data
-  # funnel_data <- shiny::reactiveVal(NULL)
-  # shiny::observeEvent(
-  #   list(filtered_df(), input$selected_month, input$selected_metric),
-  #   {
-  #     req(filtered_df(), input$selected_month, input$selected_metric)
-  #     df_processed <- get_data_for_funnel_plot(
-  #       df = filtered_df(),
-  #       month_selected = input$selected_month,
-  #       metric_selected = input$selected_metric
-  #     )
-  #     funnel_data(df_processed)
-  #   },
-  #   ignoreNULL = TRUE
-  # )
-
-  # observers -----------------------------------------------------------------
-
-  # update the available metrics based on the filtered data
-  shiny::observe({
-    shiny::updateSelectizeInput(
-      session = session,
-      inputId = "selected_metric",
-      choices = filtered_metrics(),
-      server = TRUE
-    )
-  })
-
-  # update the available places based on df()
+  # update ui inputs ----------------------------------------------------------
+  # update the available places
   shiny::observe({
     shiny::updateSelectizeInput(
       session = session,
@@ -152,7 +101,16 @@ server <- function(input, output, session) {
     )
   })
 
-  # update the available months based on df()
+  # update the available metrics
+  shiny::observe({
+    shiny::updateSelectizeInput(
+      session = session,
+      inputId = "selected_metric",
+      choices = filtered_metrics()
+    )
+  })
+
+  # update the available months
   shiny::observe({
     shiny::updateSelectizeInput(
       session = session,
@@ -163,54 +121,89 @@ server <- function(input, output, session) {
   })
 
   # outputs -------------------------------------------------------------------
-  ## national outputs ----
+  ## national dashboard -------------------------------------------------------
   output$national_table <- reactable::renderReactable({
+    req(df(), filtered_month_current(), filtered_month_previous())
     display_dashboard_national(
-      df = df,
+      df = df(),
       month_latest = filtered_month_current(),
       month_prev = filtered_month_previous()
     )
   })
 
-  # ## place outputs ---
+  ## place dashboard ----------------------------------------------------------
   output$place_header <- shiny::renderText({
     req(input$selected_place)
     input$selected_place
   })
 
   output$place_table <- reactable::renderReactable({
-    # update the dashboard
+    req(
+      df(),
+      input$selected_place,
+      filtered_month_current(),
+      filtered_month_previous()
+    )
     display_dashboard(
-      df = df,
+      df = df(),
       place_selected = input$selected_place,
       month_latest = filtered_month_current(),
       month_prev = filtered_month_previous()
     )
   })
 
+  ## place funnel -------------------------------------------------------------
+  # cache funnel data for month:metric for improved UX ---
+  df_funnel <- shiny::reactive({
+    req(df_selected_month(), input$selected_month, input$selected_metric)
+
+    get_data_for_funnel_plot(
+      df = df_selected_month(),
+      month_selected = input$selected_month |> zoo::as.yearmon(),
+      metric_selected = input$selected_metric
+    )
+  }) |>
+    shiny::bindCache(input$selected_month, input$selected_metric)
+
+  # cache limits data for month:metric for improved UX ---
+  df_limits <- shiny::reactive({
+    req(df_funnel())
+
+    compute_funnel_limits(df_funnel = df_funnel())
+  }) |>
+    shiny::bindCache(input$selected_month, input$selected_metric)
+
+  # render the funnel ---
   output$place_funnel <- plotly::renderPlotly({
     req(
       df_selected_month(),
+      df_funnel(),
       input$selected_place,
-      input$selected_metric,
-      input$selected_month
-    )
-
-    month <- input$selected_month |> zoo::as.yearmon()
-
-    # get the funnel data
-    df_funnel <- get_data_for_funnel_plot(
-      df = df_selected_month(),
-      month_selected = month,
-      metric_selected = input$selected_metric
+      input$selected_metric
     )
 
     get_funnel_plot(
-      # df_funnel = funnel_data(),
-      df_funnel = df_funnel,
+      df_funnel = df_funnel(),
+      df_limits = df_limits(),
       place_selected = input$selected_place,
       metric_selected = input$selected_metric,
-      month_selected = month
+      month_selected = input$selected_month |> zoo::as.yearmon()
     )
   })
+
+  # # prepare funnel plot data
+  # # funnel_data <- shiny::reactiveVal(NULL)
+  # # shiny::observeEvent(
+  # #   list(filtered_df(), input$selected_month, input$selected_metric),
+  # #   {
+  # #     req(filtered_df(), input$selected_month, input$selected_metric)
+  # #     df_processed <- get_data_for_funnel_plot(
+  # #       df = filtered_df(),
+  # #       month_selected = input$selected_month,
+  # #       metric_selected = input$selected_metric
+  # #     )
+  # #     funnel_data(df_processed)
+  # #   },
+  # #   ignoreNULL = TRUE
+  # # )
 }
