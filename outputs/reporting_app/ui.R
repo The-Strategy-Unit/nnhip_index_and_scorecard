@@ -41,6 +41,13 @@ ui <- function(request) {
             title = "Overview",
             icon = bsicons::bs_icon("table"),
             bslib::card_body(reactable::reactableOutput("national_table"))
+          ),
+          bslib::nav_panel(
+            title = "Data coverage",
+            icon = bsicons::bs_icon("ui-checks-grid"),
+            bslib::card_body(reactable::reactableOutput(
+              "national_data_coverage_table"
+            ))
           )
         )
       )
