@@ -40,14 +40,51 @@ board <- pins::board_connect(
 )
 pin_name <- glue::glue("{prefix}all")
 
-# # global cache
-# meta <- pins::pin_meta(board = board, name = pin_name)
-# df <- pins::pin_read(board = board, name = pin_name)
-
-# df <- df |>
-#   add_metric_column_to_df() |>
-#   dplyr::mutate(
-#     place = place |> factor(levels = sort(unique(place))),
-#     month_zoo = zoo::as.yearmon(month_zoo)
-#   )
-# df_version <- meta$version
+# define a list of places where we expect to receive information
+expected_places <- c(
+  "Fenland and Peterborough within the North Cambridgeshire and Peterborough Care Partnership",
+  "Ipswich and East Suffolk",
+  "North East Essex",
+  "South and West Hertfordshire (Dacorum and Hertsmere)",
+  "West Essex",
+  "West Suffolk",
+  "Barking and Dagenham",
+  "Croydon",
+  "Hillingdon",
+  "Kensington, Chelsea and Westminster (Bi-Borough)",
+  "Lambeth and Southwark",
+  "Coventry",
+  "East Birmingham",
+  "Herefordshire",
+  "Leicestershire (West)",
+  "Nottingham City",
+  "Shropshire",
+  "Solihull",
+  "Walsall",
+  "Bradford and Craven (Bradford South, Keighley and Airedale)",
+  "Doncaster",
+  "Leeds (Hatch, South, East)",
+  "North East Lincolnshire",
+  "Rotherham",
+  "Stockton",
+  "Sunderland",
+  "Wakefield",
+  "Blackburn and Darwen",
+  "Morecambe Bay",
+  "Rochdale",
+  "Sefton",
+  "St Helens",
+  "Stockport",
+  "Buckinghamshire (North, High Wycombe, Marlow Beaconsfield)",
+  "East Berkshire and Slough",
+  "East Kent",
+  "East Surrey (Surrey Downs)",
+  "East Sussex (Hastings and Rother)",
+  "Portsmouth",
+  "Bristol (South Bristol)",
+  "Cornwall and The Isles Of Scilly",
+  "Dorset Place ",
+  "Woodspring"
+) |>
+  stringr::str_trim() |>
+  sort()
