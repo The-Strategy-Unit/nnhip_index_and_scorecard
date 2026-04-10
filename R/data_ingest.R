@@ -535,11 +535,32 @@ process_submission <- function(str_submission_filepath) {
         col_types = "text",
         col_names = FALSE,
         range = "A1:Z100", # need this to cut off any trailing comments at the right-end of the data table, e.g. "No current data available"
-        trim_ws = TRUE # cut blank rows of data above and below the table
-      ) |>
-        # remove blank rows (determined by blank metric_details)
-        dplyr::filter_out(is.na(...3))
+        trim_ws = TRUE
+      )
     )
+
+  # remove blank rows (determined by rows that are completely empty)
+  # this should help tackle the empty space below the end of data frame
+  # and also submissions that introduce rows to separate metric blocks
+  raw_st <-
+    raw_st |>
+    dplyr::filter_out(
+      dplyr::if_all(
+        .cols = dplyr::everything(),
+        .fns = ~ is.na(.x)
+      )
+    )
+
+  # get the first row that contains header data
+  first_row <-
+    raw_st |>
+    dplyr::mutate(row_num = dplyr::row_number()) |>
+    dplyr::filter(...1 == "Metric Id") |>
+    dplyr::slice_min(order_by = row_num) |>
+    dplyr::pull(row_num)
+
+  # trim the df to get just the data
+  raw_st <- raw_st |> dplyr::slice(first_row:dplyr::n())
 
   # process the data
   ls_details <- process_instructions_data(df_raw = raw_in)
