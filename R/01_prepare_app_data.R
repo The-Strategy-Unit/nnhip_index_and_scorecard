@@ -10,4 +10,16 @@
 #' ----------------------------------------------------------------------------
 
 source(here::here("R", "data_ingest.R"))
+
+# --- Validation checks -------------------------------------------------------
+# run a validation check on submissions
+validation <- validate_monthly_submissions()
+
+# if issues detected then investigate:
+validation$issues |> View()
+validation$data |> View()
+
+# --- Process data ------------------------------------------------------------
+
+# when ready to update the data, run this:
 update_pinned_data_for_month()
