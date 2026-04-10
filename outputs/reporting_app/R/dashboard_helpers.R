@@ -2,6 +2,8 @@
 # DASHBOARD HELPER FUNCTIONS
 # -----------------------------------------------------------------------------
 
+# Data preparation ------------------------------------------------------------
+
 #' Add a metric column to a dataframe
 #'
 #' @description
@@ -86,7 +88,8 @@ suppress_counts <- function(df_raw, suppression_threshold = 6L) {
       .by = c(metric_block, demographic_type, demographic_value),
 
       # precompute whether this row should be suppressed
-      is_small_count = value_type == "count" & value < suppression_threshold,
+      is_small_count = (value_type == "count" & value < suppression_threshold) |
+        is.na(value),
 
       # update suppression flag
       value_suppressed = value_suppressed | is_small_count,
@@ -94,7 +97,8 @@ suppress_counts <- function(df_raw, suppression_threshold = 6L) {
       # suppress the value itself
       value = dplyr::if_else(
         condition = is_small_count,
-        true = NA_integer_,
+        # true = NA_character_,
+        true = NA_real_,
         false = value
       ),
 
@@ -146,54 +150,7 @@ factorise_columns <- function(df_raw) {
     )
 }
 
-#' Extract dashboard-ready metric summary for a given place and month
-#'
-#' @description
-#' This function filters a large metric dataset to return the subset of rows
-#' required for a dashboard view. It selects the data for a specified month
-#' and place, restricts results to the "Total" breakdown and applies
-#' metric-specific rules to retain only the appropriate measure (e.g., patients
-#' for P1, rate_per_1000 for all other metrics).
-#'
-#' @param df A tibble or data frame containing metric data.
-#' @param selected_month A zoo::yearmon identifying the month to filter data for
-#' @param selected_place A character string specifying the place to filter data for
-#'
-#' @returns A tibble containing the filtered subset of rows suitable for use in dashboard summaries
-#'
-#' @examples
-#' \dontrun{
-#' get_place_month_summary(
-#'   df = df,
-#'   selected_month = zoo::as.yearmon("2026-01"),
-#'   selected_place = "West Essex"
-#' )
-#' }
-#' @noRd
-get_place_month_summary <- function(df, selected_month, selected_place = NULL) {
-  df_return <-
-    df |>
-    dplyr::filter(
-      month_zoo == selected_month,
-      place == selected_place,
-      demographic_type == "Total",
-      dplyr::when_any(
-        (metric_id == "P1" & value_type == "count"),
-        (metric_id != "P1" & value_type == "rate_per_1000")
-      )
-    ) |>
-    # fill in any NA values for P1 (e.g. Portsmouth in Jan 2026)
-    dplyr::mutate(
-      value = dplyr::case_when(
-        (metric_id == "P1" & value_type == "count" & is.na(value)) ~ 0L,
-        .default = value
-      )
-    )
-
-  # return the result
-  return(df_return)
-}
-
+# General functions -----------------------------------------------------------
 
 #' Summarise average metric values for a given place
 #'
@@ -298,6 +255,53 @@ summarise_averages <- function(df, selected_place = NULL) {
 }
 
 
+#' Render a value with an up, down or neutral arrow for reactable tables
+#'
+#' @description
+#' This helper function formats numeric values for use in a {reactable} column
+#' by prepending an arrow icon that indicates the direction of change. Positive
+#' values display an upward arrow, negative values display a downward arrow,
+#' and zero values display a neutral dash. All icons are styled using the
+#' colour code {#686f73}.
+#'
+#' The function returns HTML suitable for use inside a `colDef()` with
+#' `html = TRUE`.
+#'
+#' @param value A numeric value to be formatted. May be positive, negative or `NA`. `NA` values return an empty string.
+#'
+#' @returns A HTML string containing an arrow icon and the formatted numeric value, intended for use in side a {reactable} cell.
+#'
+#' @examples
+#' \dontrun{
+#' reactable::reactable(
+#'   data.frame(month_diff = c(-2.3, 0, 1.7)),
+#'   columns = list(
+#'     month_diff = reactable::colDef(
+#'       html = TRUE,
+#'       cell = arrow_cell
+#'     )
+#'   )
+#' )
+#' }
+arrow_cell <- function(value) {
+  if (is.na(value)) {
+    return("")
+  }
+
+  arrow <- if (value > 0) {
+    "<span style='color:#f9bf07'>&#9650;</span>" # up arrow
+  } else if (value < 0) {
+    "<span style='color:#5881c1'>&#9660;</span>" # down arrow
+  } else {
+    "<span style='color:#686f73'>&#8213;</span>" # neutral dash
+  }
+
+  htmltools::HTML(
+    paste0(sprintf("%.1f", value), " ", arrow)
+  )
+}
+
+
 #' Extract sparkline-ready trend data for a selected place
 #'
 #' @description
@@ -343,6 +347,100 @@ get_sparkline_data <- function(df, selected_place) {
       .by = c(metric_id, metric_details, value_type)
     )
 }
+
+#' Extract the list of available metric names
+#'
+#' @description
+#' Returns a tibble containing the distinct metric names available in the
+#' dataset. By default, this excludes metric `"P1"` (a count-only metric),
+#' but it can be included if required.
+#'
+#' @param df A tibble containing metric data.
+#' @param include_p1 Logical; if `FALSE` (default), metric `"P1"` is excluded from the returned list
+#'
+#' @returns A tibble with one row per metric, containing:
+#' - `metric_block`: the metric identifier
+#' - `metric_details`: the human-readable metric name
+#'
+#' @examples
+#' \dontrun{
+#' get_metric_names(df_metrics)
+#' get_metric_names(df_metrics, include_p1 = TRUE)
+#' }
+get_metric_names <- function(df, include_p1 = FALSE) {
+  # get the metric names as a separate tibble
+  df_metric_names <-
+    df |>
+    dplyr::filter(
+      demographic_type == "Total",
+      value_type == "rate_per_1000"
+    )
+
+  # exclude metric P1 (count only) unless specified
+  if (!include_p1) {
+    df_metric_names <-
+      df_metric_names |>
+      dplyr::filter(metric_id != "P1")
+  }
+
+  df_metric_names <-
+    df_metric_names |>
+    dplyr::select(metric_block, metric_details) |>
+    dplyr::distinct()
+
+  return(df_metric_names)
+}
+
+# Place-based views -----------------------------------------------------------
+
+#' Extract dashboard-ready metric summary for a given place and month
+#'
+#' @description
+#' This function filters a large metric dataset to return the subset of rows
+#' required for a dashboard view. It selects the data for a specified month
+#' and place, restricts results to the "Total" breakdown and applies
+#' metric-specific rules to retain only the appropriate measure (e.g., patients
+#' for P1, rate_per_1000 for all other metrics).
+#'
+#' @param df A tibble or data frame containing metric data.
+#' @param selected_month A zoo::yearmon identifying the month to filter data for
+#' @param selected_place A character string specifying the place to filter data for
+#'
+#' @returns A tibble containing the filtered subset of rows suitable for use in dashboard summaries
+#'
+#' @examples
+#' \dontrun{
+#' get_place_month_summary(
+#'   df = df,
+#'   selected_month = zoo::as.yearmon("2026-01"),
+#'   selected_place = "West Essex"
+#' )
+#' }
+#' @noRd
+get_place_month_summary <- function(df, selected_month, selected_place = NULL) {
+  df_return <-
+    df |>
+    dplyr::filter(
+      month_zoo == selected_month,
+      place == selected_place,
+      demographic_type == "Total",
+      dplyr::when_any(
+        (metric_id == "P1" & value_type == "count"),
+        (metric_id != "P1" & value_type == "rate_per_1000")
+      )
+    ) |>
+    # fill in any NA values for P1 (e.g. Portsmouth in Jan 2026)
+    dplyr::mutate(
+      value = dplyr::case_when(
+        (metric_id == "P1" & value_type == "count" & is.na(value)) ~ 0L,
+        .default = value
+      )
+    )
+
+  # return the result
+  return(df_return)
+}
+
 
 #' Prepare combined dashboard data for display
 #'
@@ -443,52 +541,6 @@ get_dashboard_data <- function(df, month_latest, month_prev, place_selected) {
     )
 
   return(df_dashboard)
-}
-
-#' Render a value with an up, down or neutral arrow for reactable tables
-#'
-#' @description
-#' This helper function formats numeric values for use in a {reactable} column
-#' by prepending an arrow icon that indicates the direction of change. Positive
-#' values display an upward arrow, negative values display a downward arrow,
-#' and zero values display a neutral dash. All icons are styled using the
-#' colour code {#686f73}.
-#'
-#' The function returns HTML suitable for use inside a `colDef()` with
-#' `html = TRUE`.
-#'
-#' @param value A numeric value to be formatted. May be positive, negative or `NA`. `NA` values return an empty string.
-#'
-#' @returns A HTML string containing an arrow icon and the formatted numeric value, intended for use in side a {reactable} cell.
-#'
-#' @examples
-#' \dontrun{
-#' reactable::reactable(
-#'   data.frame(month_diff = c(-2.3, 0, 1.7)),
-#'   columns = list(
-#'     month_diff = reactable::colDef(
-#'       html = TRUE,
-#'       cell = arrow_cell
-#'     )
-#'   )
-#' )
-#' }
-arrow_cell <- function(value) {
-  if (is.na(value)) {
-    return("")
-  }
-
-  arrow <- if (value > 0) {
-    "<span style='color:#f9bf07'>&#9650;</span>" # up arrow
-  } else if (value < 0) {
-    "<span style='color:#5881c1'>&#9660;</span>" # down arrow
-  } else {
-    "<span style='color:#686f73'>&#8213;</span>" # neutral dash
-  }
-
-  htmltools::HTML(
-    paste0(sprintf("%.1f", value), " ", arrow)
-  )
 }
 
 #' Display a dashboard-style reactable view of metric data
@@ -1006,6 +1058,8 @@ compute_funnel_limits <- function(df_funnel) {
     )
 }
 
+# National views --------------------------------------------------------------
+
 #' Compute national monthly averages for outcome and process metrics
 #'
 #' @description
@@ -1435,49 +1489,6 @@ display_dashboard_national <- function(df, month_latest, month_prev) {
   )
 }
 
-
-#' Extract the list of available metric names
-#'
-#' @description
-#' Returns a tibble containing the distinct metric names available in the
-#' dataset. By default, this excludes metric `"P1"` (a count-only metric),
-#' but it can be included if required.
-#'
-#' @param df A tibble containing metric data.
-#' @param include_p1 Logical; if `FALSE` (default), metric `"P1"` is excluded from the returned list
-#'
-#' @returns A tibble with one row per metric, containing:
-#' - `metric_block`: the metric identifier
-#' - `metric_details`: the human-readable metric name
-#'
-#' @examples
-#' \dontrun{
-#' get_metric_names(df_metrics)
-#' get_metric_names(df_metrics, include_p1 = TRUE)
-#' }
-get_metric_names <- function(df, include_p1 = FALSE) {
-  # get the metric names as a separate tibble
-  df_metric_names <-
-    df |>
-    dplyr::filter(
-      demographic_type == "Total",
-      value_type == "rate_per_1000"
-    )
-
-  # exclude metric P1 (count only) unless specified
-  if (!include_p1) {
-    df_metric_names <-
-      df_metric_names |>
-      dplyr::filter(metric_id != "P1")
-  }
-
-  df_metric_names <-
-    df_metric_names |>
-    dplyr::select(metric_block, metric_details) |>
-    dplyr::distinct()
-
-  return(df_metric_names)
-}
 
 #' Display a national data coverage table
 #'
