@@ -28,7 +28,7 @@ library(dataui)
 
 # real data ----
 # connect to the Posit Connect board
-server <- Sys.getenv("posit_server")
+server <- Sys.getenv("posit_server_https")
 account <- Sys.getenv("posit_account")
 prefix <- Sys.getenv("pin_prefix")
 api_key <- Sys.getenv("posit_api_key")
