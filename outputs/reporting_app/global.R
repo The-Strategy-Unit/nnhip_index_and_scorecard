@@ -39,6 +39,7 @@ board <- pins::board_connect(
   key = api_key
 )
 pin_name <- glue::glue("{prefix}all")
+pin_name_issues <- glue::glue("{prefix}issueslog")
 
 # define a list of places where we expect to receive information
 expected_places <- c(
