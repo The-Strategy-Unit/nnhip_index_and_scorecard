@@ -1,3 +1,4 @@
+# MS Teams --------------------------------------------------------------------
 #' Retrieve a refrence to a folder within a Microsoft Teams channel
 #'
 #' @description
@@ -96,6 +97,9 @@ list_submission_folders <- function(ms_teams_folder = NULL) {
     )
   }
 
+  # update the user
+  cli::cli_progress_message("Accessing folders ...")
+
   # list the items in this folder
   items <- folder$list_items()
 
@@ -160,6 +164,9 @@ list_submission_files <- function(
     )
   }
 
+  # update the user
+  cli::cli_progress_message("Accessing submitted files ...")
+
   # download to a persistent temporary directory
   tmp <- tempfile()
   dir.create(tmp)
@@ -174,6 +181,59 @@ list_submission_files <- function(
   # return the list of files
   return(files)
 }
+
+#' Retrieve the issues log from the MS Teams Folder
+#'
+#' @description
+#' Downloads and reads the issues log Excel file (`submission_changelog.xlsx`) stored in the MS Teams submissions folder. The function retrieves the file, downloads it to a temporary location, reads the `"Details"` sheet and returns it as a data frame.
+#'
+#' @param ms_teams_folder Optional. A referenc to the MS Teams folder containing the sbumissions. If not supplied, the function will call `get_ms_teams_folder()` to obtain it.
+#' @param filename The name of the issues log file to retrieve
+#' @param sheetname The name of the sheet to retrieve
+#'
+#' @returns A data frame containing the contents of the `"Details"` sheet from the issues log Excel file.
+#'
+#' @examples
+#' \dontrun{
+#' # retrieve the default issues log
+#' log <- get_issues_log()
+#' }
+get_issues_log <- function(
+  ms_teams_folder = NULL,
+  filename = "submission_changelog.xlsx",
+  sheetname = "Details"
+) {
+  # get a reference to the folder if not supplied
+  if (is.null(ms_teams_folder)) {
+    ms_teams_folder <- get_ms_teams_folder()
+  }
+
+  # get the submission change log file reference
+  tryCatch(
+    {
+      chnglg <- ms_teams_folder$get_item(filename)
+    },
+    error = function(e) {
+      cli::cli_abort(
+        "The file {.file {filename}} does not exist inside the MS Teams Folder."
+      )
+    }
+  )
+
+  # update the user
+  cli::cli_progress_message("Accessing the changelog ...")
+
+  # download to a temporary file
+  tmp <- tempfile()
+  chnglg$download(dest = tmp, overwrite = TRUE)
+  df <- readxl::read_excel(path = tmp, sheet = sheetname) |>
+    janitor::clean_names()
+
+  # return the df
+  return(df)
+}
+
+# File processing -------------------------------------------------------------
 
 #' Extract and clean header information from a raw submission template
 #'
@@ -205,7 +265,8 @@ get_submissiontemplate_header <- function(df_raw) {
   }
 
   # read the header component
-  header <- df_raw |> dplyr::slice(4:5)
+  # header <- df_raw |> dplyr::slice(4:5)
+  header <- df_raw |> dplyr::slice(1:2)
 
   # check that rows 4 and 5 contain some non-NA values
   if (all(is.na(unlist(header)))) {
@@ -243,6 +304,17 @@ get_submissiontemplate_header <- function(df_raw) {
     # extract
     dplyr::ungroup() |>
     dplyr::pull(head)
+
+  # standardise the headings
+  headings <-
+    headings |>
+    # remove double-spacings as well as all other whitespace (tabs, newlines, etc)
+    stringr::str_squish() |>
+    # standardise 'Not known' values
+    stringr::str_replace_all(
+      pattern = c("Not Known$|not known$|NOT KNOWN$|not Known$"),
+      replacement = "Not known"
+    )
 
   # return the result
   return(headings)
@@ -288,7 +360,9 @@ get_submissiontemplate_header <- function(df_raw) {
 #' }
 process_submissiontemplate_data <- function(
   df_raw,
-  suppression_marker = c("*")
+  suppression_marker = c("*", "", "<5", "-"),
+  # suppression_marker = c("*", ""),
+  filepath = NULL
 ) {
   # get the cleaned column headings
   headings <- get_submissiontemplate_header(df_raw = df_raw)
@@ -304,7 +378,7 @@ process_submissiontemplate_data <- function(
   }
 
   # get the contents of the raw data frame, excluding headings
-  df <- df_raw |> dplyr::slice(6:dplyr::n())
+  df <- df_raw |> dplyr::slice(3:dplyr::n())
 
   # apply the column names
   colnames(df) <- headings
@@ -366,10 +440,48 @@ process_submissiontemplate_data <- function(
     tidyr::fill(c(metric_id, metric_type, metric_details)) |>
     # flag suppressed values and convert (where possible) to a number
     dplyr::mutate(
-      value_suppressed = value %in% suppression_marker,
-      value = dplyr::na_if(x = value, y = suppression_marker) |> as.numeric()
+      value_suppressed = (value %in% suppression_marker) | is.na(value),
+      value = replace(
+        x = value,
+        list = value %in% suppression_marker,
+        values = NA_character_
+      )
     ) |>
     dplyr::arrange(metric_id, metric_block, value_type)
+
+  # identify suspicious values which don't parse as numeric
+  df_suspicious <-
+    df_return |>
+    dplyr::filter(!is.na(value)) |>
+    dplyr::distinct(value) |>
+    dplyr::mutate(
+      value_numeric = readr::parse_double(x = value, na = suppression_marker),
+      value_numeric_flag = !is.na(value_numeric)
+    ) |>
+    dplyr::filter(!value_numeric_flag) |>
+    # prevent warnings about coerced values
+    suppressWarnings()
+
+  # run a final check for non-numeric values - alert the user if any found
+  if (nrow(df_suspicious) > 0) {
+    # gather some information
+    n_sus_vals <- nrow(df_suspicious)
+    sus_vals <- df_suspicious$value |> unique()
+
+    # give the user some information
+    cli::cli_alert_danger(
+      "Found {n_sus_vals} non-numeric entr{?y/ies} in {.val value} ({.val {sus_vals}}) in the file {.file {basename(filepath)}}. Consider adding {?it/them} to {.var suppression_marker} parameter of {.fn process_submissiontemplate_data}.",
+      wrap = TRUE
+    )
+  }
+
+  # finally, convert `value` to numeric and return (silently)
+  df_return <-
+    df_return |>
+    dplyr::mutate(
+      value = readr::parse_double(x = value, na = suppression_marker)
+    ) |>
+    suppressWarnings()
 
   # return the cleaned up data
   return(df_return)
@@ -473,14 +585,49 @@ process_submission <- function(str_submission_filepath) {
         sheet = "SubmissionTemplate",
         col_types = "text",
         col_names = FALSE,
-        range = "A1:Z50" # need this to cut off any trailing comments at the end of the data table, e.g. "No current data available"
-        # .name_repair = "minimal" # prevent console messages about column name creation
+        range = "A1:Z100", # need this to cut off any trailing comments at the right-end of the data table, e.g. "No current data available"
+        trim_ws = TRUE
       )
     )
 
+  # remove blank rows (determined by rows that are completely empty)
+  # this should help tackle the empty space below the end of data frame
+  # and also submissions that introduce rows to separate metric blocks
+  raw_st <-
+    raw_st |>
+    dplyr::filter_out(
+      dplyr::if_all(
+        .cols = dplyr::everything(),
+        .fns = ~ is.na(.x)
+      )
+    )
+
+  # create a temporary version with row numbers
+  df_temp <- raw_st |> dplyr::mutate(row_num = dplyr::row_number())
+
+  # get the first row that contains header data
+  first_row <-
+    df_temp |>
+    dplyr::filter(...1 == "Metric Id") |>
+    dplyr::slice_min(order_by = row_num) |>
+    dplyr::pull(row_num)
+
+  # ge the last row - should end in P1 (to trim off any text added below the template)
+  last_row <-
+    df_temp |>
+    dplyr::filter(...1 == "P1") |>
+    dplyr::slice_max(order_by = row_num) |>
+    dplyr::pull(row_num)
+
+  # trim the df to get just the data
+  raw_st <- raw_st |> dplyr::slice(first_row:last_row)
+
   # process the data
   ls_details <- process_instructions_data(df_raw = raw_in)
-  df_template <- process_submissiontemplate_data(df_raw = raw_st)
+  df_template <- process_submissiontemplate_data(
+    df_raw = raw_st,
+    filepath = str_submission_filepath
+  )
 
   # combine the details and template
   df_return <-
@@ -577,45 +724,32 @@ ingest_data <- function(month = NULL, ms_teams_folder = NULL) {
   return(df)
 }
 
+# Posit Connect ---------------------------------------------------------------
+
 #' Update pinned monthly and combined datasets on Posit Connect
 #'
 #' @description
-#' This function igests all submitted Excel files for a given month, stores the
+#' This function ingests all submitted Excel files for a given month, stores the
 #' cleaned monthly dataset as a pin, updates the list of processed months and
 #' refereshes a combined dataset containing all months' submissions.
 #'
 #' @returns Invisibly returns TRUE on success
 update_pinned_data_for_month <- function() {
-  # connect to the Teams / SharePoint site
-  folder <- get_ms_teams_folder()
+  # get a reference to the teams folder
+  ms_teams_folder <- get_ms_teams_folder()
 
-  # list folders
-  folders <- list_submission_folders(ms_teams_folder = folder)
+  # collate the submissions for a month
+  df_month <- collate_submissions_for_month(ms_teams_folder = ms_teams_folder)
 
-  # display a numbered menu
-  cli::cli_h2("Available submission folders:")
-  cli::cli_ol(items = folders)
+  # get the issues / changelog
+  df_issues <- get_issues_log(ms_teams_folder = ms_teams_folder)
 
-  # ask the user to choose
-  choice <- readline("Select a folder by number: ")
-
-  # validate the choice
-  if (!choice %in% (length(folders) |> seq_len() |> as.character())) {
-    cli::cli_abort("Invalid selection.")
-  }
-
-  # get the name of the selected folder
-  month_id <- folders[as.integer(choice)]
-
-  # process a month's data safely to catch any errors
-  safe_ingest_data <- purrr::safely(ingest_data)
-  out <- safe_ingest_data(month = month_id, ms_teams_folder = folder)
-  if (!is.null(out$error)) {
-    cli::cli_abort(
-      "Failed to read all submissions for {.val {month_id}}: {out$error$message}"
-    )
-  }
-  df_month <- out$result
+  # get the month_id (textual representation of the month in YYYY-MM format)
+  month_id <-
+    df_month |>
+    dplyr::filter(!is.na(month)) |>
+    dplyr::slice_head() |>
+    dplyr::pull(month)
 
   # connect to the Posit Connect board
   server <- Sys.getenv("posit_server")
@@ -676,6 +810,15 @@ update_pinned_data_for_month <- function() {
   ) |>
     suppressMessages()
 
+  # write / update the issues log
+  pin_name <- glue::glue("{prefix}issueslog")
+  pins::pin_write(
+    board = board,
+    x = df_issues,
+    name = pin_name,
+    type = "rds"
+  )
+
   # clean up the connections to the temporary files downloaded from SharePoint
   closeAllConnections()
 
@@ -683,12 +826,91 @@ update_pinned_data_for_month <- function() {
   invisible(TRUE)
 }
 
+#' Collate all data submissions for a selected reporting month
+#'
+#' @description
+#' This function guides the user through selecting a monthly submission folder
+#' from a Microsoft Teams / SharePoint site and then ingests all submissions
+#' for that month. It provides a numbered menu of available folders, validates
+#' the user's selections and safely processes the chosen month's data.
+#'
+#' @details
+#' Workflow:
+#'   1. Connect to the Teams/SharePoint site using `get_ms_teams_folder()`
+#'   2. Retrieve the list of available submission folders via
+#'      `list_submission_folders()`
+#'   3. Display the folders as a numbered list and prompt the user to select one
+#'   4. Validate the user's input to ensure it corresponds to a valid folder
+#'   5. Ingests all submissions for the selected month using `ingest_data()`,
+#'      with errors captured and reported using `purrr::safely()`
+#'   6. Return a data frame containing the combined monthly submissions.
+#'
+#' @returns
+#' A data frame (`df_month`) containing all successfully ingested submissions
+#' for the selected reporting month.
+#'
+#' @raises
+#' - An error if the user enters an invalid folder number
+#' - An error if `ingest_data()` fails to read one or more submissions
+#'
+#' @seealso
+#' - `get_ms_teams_folder()` for establishing the SharePoint connection
+#' - `list_submission_folders()` for discovering available submission periods
+#' - `ingest_data()` for the underlying ingestion logic
+#'
+#' @examples
+#' \dontrun{
+#' df <- collate_submissions_for_month()
+#' }
+collate_submissions_for_month <- function(ms_teams_folder = NULL) {
+  # connect to the Teams / SharePoint site
+  if (is.null(ms_teams_folder)) {
+    folder <- get_ms_teams_folder()
+  }
+
+  # list folders
+  folders <- list_submission_folders(ms_teams_folder = folder)
+
+  # display a numbered menu
+  cli::cli_h2("Available submission folders:")
+  cli::cli_ol(items = folders)
+
+  # ask the user to choose
+  choice <- readline("Select a folder by number: ")
+
+  # validate the choice
+  if (!choice %in% (length(folders) |> seq_len() |> as.character())) {
+    cli::cli_abort("Invalid selection.")
+  }
+
+  # get the name of the selected folder
+  month_id <- folders[as.integer(choice)]
+
+  # process a month's data safely to catch any errors
+  safe_ingest_data <- purrr::safely(ingest_data)
+  out <- safe_ingest_data(month = month_id, ms_teams_folder = folder)
+  if (!is.null(out$error)) {
+    cli::cli_abort(
+      "Failed to read all submissions for {.val {month_id}}: {out$error$message}"
+    )
+  }
+  df_month <- out$result
+
+  return(df_month)
+}
+
 #' Create placeholder monthly pins on Posit Connect
 #'
 #' @description
-#' This function pre-creates a set of monthly pins on a Posit Connect board. Each pin is populated with a simple placeholder object and named using a prefix combined with the year-month (e.g., "craig.parylo/nnhip_scorecard_reporting").
+#' This function pre-creates a set of monthly pins on a Posit Connect board.
+#' Each pin is populated with a simple placeholder object and named using a
+#' prefix combined with the year-month (e.g.,
+#' "craig.parylo/nnhip_scorecard_reporting").
 #'
-#' The purpose is to establish all required pins *in advance*, so that access control can be configured once (e.g., granting a team group collaborator access). After this setup, any team member can update the pin without running into ownership issues.
+#' The purpose is to establish all required pins *in advance*, so that access
+#' control can be configured once (e.g., granting a team group collaborator
+#' access). After this setup, any team member can update the pin without
+#' running into ownership issues.
 #'
 #' @details
 #' This function:
@@ -699,7 +921,8 @@ update_pinned_data_for_month <- function() {
 #' 2. Generates a monthly sequence from `from` to `to`
 #' 3. Writes a placeholder RDS object to each pin name
 #'
-#' The placeholder is intentionally minimal; its only purpose is to create the pin so that access control can be configured manually via the web GUI.
+#' The placeholder is intentionally minimal; its only purpose is to create the
+#' pin so that access control can be configured manually via the web GUI.
 #'
 #' @param from A character string coercible to Date. The first month to create.
 #' @param to A character string coercible to Date. The last month to create.
@@ -745,4 +968,377 @@ create_placeholder_pins <- function(from = "2026-02-01", to = "2027-3-01") {
   )
 
   invisible(TRUE)
+}
+
+# Validation ------------------------------------------------------------------
+
+#' Validate monthly submissions and identify data issues
+#'
+#' @description
+#' This function wraps `collate_submissions_for_month()` to ingest a month's submissions and then run a series of validation checks before the data is used downstream. It currently checks for unexpected record counts by `place`, but can be extended with additional validation rules.
+#'
+#' @returns
+#' A list with two elements:
+#' - `data`: the ingested data frame for the selected month
+#' - `issues`: a data frame of detected issues suitable for logging
+#'
+#' @examples
+#' \dontrun{
+#' result <- validate_monthly_submissions()
+#' result$issues
+#' }
+validate_monthly_submissions <- function() {
+  # ingest the data
+  df <- collate_submissions_for_month()
+
+  # run validation checks
+  issues <- list()
+
+  # check 1: record counts by place
+  issues[[length(issues) + 1]] <- check_record_counts_per_place(df = df)
+  # check 2: demographic breakdowns
+  issues[[length(issues) + 1]] <- check_demographic_breakdown(df = df)
+  # check 3: no NA values in `month`
+  issues[[length(issues) + 1]] <- check_month_completeness(df = df)
+  # check 4: all months are the same - identify places that are 'abnormal'
+  issues[[length(issues) + 1]] <- check_month_consistency(df = df)
+  # check 5: all metric_block | metric_details combo are consistent
+  # issues[[length(issues) + 1]] <- check_metric_alignment(df = df)
+
+  # combine issues into a single data frame
+  issues_df <- if (length(issues) == 0) {
+    dplyr::tibble()
+  } else {
+    dplyr::bind_rows(issues)
+  }
+
+  # return both data and issues
+  list(
+    data = df,
+    issues = issues_df
+  )
+}
+
+empty_issue_schema <- function() {
+  tibble::tibble(
+    issue_type = character(),
+    description = character(),
+    place = character(),
+    field = character(),
+    value = character(),
+    impact = character(),
+    status = character()
+  )
+}
+
+#' Check for anomalies in record counts by place
+#'
+#' @param df A data frame of ingested metrics data
+#'
+#' @returns A data frame of issues (possibly empty) with fields suitable for
+#' logging in the data-issues log
+check_record_counts_per_place <- function(df) {
+  # count records by place
+  counts <- df |> dplyr::count(place, name = "n_records")
+
+  # define suspicious counts
+  suspicious <- counts |>
+    dplyr::filter(n_records != 1035)
+
+  # if nothing suspicious, return an empty tibble
+  if (nrow(suspicious == 0)) {
+    return(empty_issue_schema())
+  }
+
+  # otherwise return structured issues
+  if (nrow(suspicious) > 0) {
+    cli::cli_alert_danger("Issues detected with the number of rows per Place")
+
+    suspicious |>
+      dplyr::mutate(
+        issue_type = "Record count anomaly",
+        description = "Unexpected number of records for place (expecting 1035)",
+        place = place,
+        field = "n_records",
+        value = as.character(n_records),
+        impact = "Potentially incorrect or missing submission",
+        status = "Open"
+      ) |>
+      dplyr::select(
+        issue_type,
+        description,
+        place,
+        field,
+        value,
+        impact,
+        status
+      )
+  }
+}
+
+#' Check for unexpected demographic breakdown values
+#'
+#' @description
+#' This validation check ensures that each record contains only approved demographic types and demographic values. Any unexpected combination is flagged as a potential data-quality issue, often indicating an outdated submission template or manual data entry error.
+#'
+#' @param df data frame of ingested metrics data
+#'
+#' @returns A data frame of issues (possibly empty) with fields suitable for
+#' logging in the data-issues log
+check_demographic_breakdown <- function(df) {
+  # expected demographic types
+  valid_types <- c("Age Group", "Deprivation Quintile", "Ethnic Group", "Total")
+
+  # expected demographic values
+  valid_values <- c(
+    "Total",
+    # Age group
+    "18-19",
+    "20-29",
+    "30-39",
+    "40-49",
+    "50-59",
+    "60-69",
+    "70-79",
+    "80-89",
+    "90+",
+    "Not known",
+    # Ethnicity
+    "Asian",
+    "Black",
+    "Mixed",
+    "Not known",
+    "Other",
+    "White",
+    # Deprivation quintile
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "Not known"
+  )
+
+  # define suspicious counts
+  suspicious <- df |>
+    dplyr::filter(
+      !demographic_type %in% valid_types | !demographic_value %in% valid_values
+    ) |>
+    dplyr::distinct(place, demographic_type, demographic_value)
+
+  # if no issues then retun empty schema
+  if (nrow(suspicious) == 0) {
+    return(empty_issue_schema())
+  }
+
+  # if issues detected, then respond and gather data
+  if (nrow(suspicious) > 0) {
+    cli::cli_alert_danger(
+      "Issues detected with demographic breakdowns. Check the issues log.",
+      wrap = TRUE
+    )
+
+    suspicious |>
+      dplyr::mutate(
+        issue_type = "Demographic anomaly",
+        description = "Unexpected demographic type or value",
+        place = place,
+        field = "demographic_type / demographic_value",
+        value = paste(demographic_type, demographic_value, sep = " - "),
+        impact = "Potentially incorrect or outdated submission template",
+        status = "Open"
+      ) |>
+      dplyr::select(
+        issue_type,
+        description,
+        place,
+        field,
+        value,
+        impact,
+        status
+      )
+  }
+}
+
+#' Check for missing month values in a submission
+#'
+#' @description
+#' Identifies records where the `month` column is missing (`NA`). If no issues
+#' are found, an empty issue scheme is returned
+#'
+#' @param df data frame of ingested metrics data
+#'
+#' @returns A data frame of issues (possibly empty) with fields suitable for
+#' logging in the data-issues log
+check_month_completeness <- function(df) {
+  # define suspicious counts
+  suspicious <- df |>
+    dplyr::filter(is.na(month)) |>
+    dplyr::distinct(place)
+
+  # if no issues then retun empty schema
+  if (nrow(suspicious) == 0) {
+    return(empty_issue_schema())
+  }
+
+  # if issues detected, then respond and gather data
+  if (nrow(suspicious) > 0) {
+    suspicous_places <- suspicious$place |> unique() |> sort()
+    cli::cli_alert_danger(
+      "Missing month values detected for {.val {suspicous_places}}. Check the issues log.",
+      wrap = TRUE
+    )
+
+    suspicious |>
+      dplyr::mutate(
+        issue_type = "Month anomaly",
+        description = "NAs detected in the month column",
+        place = place,
+        field = "month",
+        value = month,
+        impact = "Month not complete or Instructions sheet missing",
+        status = "Open"
+      ) |>
+      dplyr::select(
+        issue_type,
+        description,
+        place,
+        field,
+        value,
+        impact,
+        status
+      )
+  }
+}
+
+#' Check consistency of record counts across months
+#'
+#' @description
+#' Identifies months that have an unexpected number of records compared with
+#' the modal (most common) month count. This helps detect typos or incorrectly
+#' filed submission files.
+#'
+#' @details
+#' The function groups the input data frame by `month` and counts the number of
+#' records associated with each month. Months whose record count differs from
+#' the maximum (i.e. the modal count) are flagged as suspicious.
+#'
+#' If no inconsistencies are found, the function returns an empty issue schema.
+#'
+#' @param df data frame of ingested metrics data
+#'
+#' @returns A data frame of issues (possibly empty) with fields suitable for
+#' logging in the data-issues log
+check_month_consistency <- function(df) {
+  # define suspicious counts - months with fewer records than the modal month count
+  suspicious <- df |>
+    dplyr::mutate(
+      counter = 1L,
+      n_records = sum(counter, na.rm = TRUE),
+      .by = month
+    ) |>
+    dplyr::distinct(place, month, n_records) |>
+    dplyr::filter_out(n_records == max(n_records, na.rm = TRUE))
+
+  # if nothing suspicious, return an empty tibble
+  if (nrow(suspicious) == 0) {
+    return(empty_issue_schema())
+  }
+
+  # otherwise return structured issues
+  if (nrow(suspicious) > 0) {
+    months_submitted <- df$month |> unique() |> sort()
+
+    cli::cli_alert_danger(
+      "Multiple months found in the submission files: {.val {months_submitted}}. Check the issues log.",
+      wrap = TRUE
+    )
+
+    suspicious |>
+      dplyr::mutate(
+        issue_type = "Month anomaly",
+        description = "More than one month in the submissions",
+        place = place,
+        field = "month",
+        value = paste(place, month, sep = ": "),
+        impact = "Month is likely to be incorrect or misfiled",
+        status = "Open"
+      ) |>
+      dplyr::select(
+        issue_type,
+        description,
+        place,
+        field,
+        value,
+        impact,
+        status
+      )
+  }
+}
+
+#' Check for misalignment in metric definitions
+#'
+#' @description
+#' Identifies potential structural inconsistencies in the alignment of
+#' `metric_block` and `metric_details` within a metrics dataset. The function
+#' inspects the number of distinct `place` values associated with each metric
+#' grouping and flags cases where the count deviates from the expected modal
+#' value. Such discrepancies often indicate template misreads or user-altered
+#' submissions.
+#'
+#' @param df data frame of ingested metrics data
+#'
+#' @returns A data frame of issues (possibly empty) with fields suitable for
+#' logging in the data-issues log
+check_metric_alignment <- function(df) {
+  # define suspicious counts - months with fewer records than the modal month count
+  suspicious <- df |>
+    dplyr::filter(
+      demographic_type == "Total",
+      value_type == "rate_per_1000"
+    ) |>
+    dplyr::summarise(
+      .by = c(metric_block, metric_details),
+      n_places = dplyr::n_distinct(place, na.rm = TRUE),
+      places = paste(place, collapse = " | ")
+    )
+
+  # if nothing suspicious, return an empty tibble
+  if (nrow(suspicious) == 15) {
+    return(empty_issue_schema())
+  }
+
+  # otherwise return structured issues
+  if (nrow(suspicious) != 15) {
+    # just print directly the console (for now - may remove in future)
+    suspicious
+
+    # get the unusual records
+    suspicious <- suspicious |> dplyr::slice_min(order_by = n_places)
+
+    cli::cli_alert_danger(
+      "Misalignment in {.val metric_block|metric_details} detected for some submissions, possibly caused by mis-reading the template or by a user-altered template. Check the issues log.",
+      wrap = TRUE
+    )
+
+    suspicious |>
+      dplyr::mutate(
+        issue_type = "Metric anomaly",
+        description = "Misalignment in `metric_block|metric_details`",
+        place = places,
+        field = "metric_block | metric_details",
+        value = paste(metric_block, metric_details, sep = ": "),
+        impact = "Metric details do not align and dashboard unlikely to load",
+        status = "Open"
+      ) |>
+      dplyr::select(
+        issue_type,
+        description,
+        place,
+        field,
+        value,
+        impact,
+        status
+      )
+  }
 }
