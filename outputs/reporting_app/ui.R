@@ -48,6 +48,11 @@ ui <- function(request) {
             bslib::card_body(reactable::reactableOutput(
               "national_data_coverage_table"
             ))
+          ),
+          bslib::nav_panel(
+            title = "Change log",
+            icon = bsicons::bs_icon("journal-text"),
+            bslib::card_body(reactable::reactableOutput("changelog_table"))
           )
         )
       )
@@ -92,11 +97,13 @@ ui <- function(request) {
               )
             ),
 
+            # divider
+            shiny::hr(),
+
             # bookmark button
             shiny::bookmarkButton(label = "Bookmark"),
 
             # add some branding
-            shiny::hr(),
             shiny::tags$div(
               style = "text-align:center; padding: 10px 0;",
               shiny::tags$img(
