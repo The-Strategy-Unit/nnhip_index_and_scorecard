@@ -182,6 +182,57 @@ list_submission_files <- function(
   return(files)
 }
 
+#' Retrieve the issues log from the MS Teams Folder
+#'
+#' @description
+#' Downloads and reads the issues log Excel file (`submission_changelog.xlsx`) stored in the MS Teams submissions folder. The function retrieves the file, downloads it to a temporary location, reads the `"Details"` sheet and returns it as a data frame.
+#'
+#' @param ms_teams_folder Optional. A referenc to the MS Teams folder containing the sbumissions. If not supplied, the function will call `get_ms_teams_folder()` to obtain it.
+#' @param filename The name of the issues log file to retrieve
+#' @param sheetname The name of the sheet to retrieve
+#'
+#' @returns A data frame containing the contents of the `"Details"` sheet from the issues log Excel file.
+#'
+#' @examples
+#' \dontrun{
+#' # retrieve the default issues log
+#' log <- get_issues_log()
+#' }
+get_issues_log <- function(
+  ms_teams_folder = NULL,
+  filename = "submission_changelog.xlsx",
+  sheetname = "Details"
+) {
+  # get a reference to the folder if not supplied
+  if (is.null(ms_teams_folder)) {
+    ms_teams_folder <- get_ms_teams_folder()
+  }
+
+  # get the submission change log file reference
+  tryCatch(
+    {
+      chnglg <- ms_teams_folder$get_item(filename)
+    },
+    error = function(e) {
+      cli::cli_abort(
+        "The file {.file {filename}} does not exist inside the MS Teams Folder."
+      )
+    }
+  )
+
+  # update the user
+  cli::cli_progress_message("Accessing the changelog ...")
+
+  # download to a temporary file
+  tmp <- tempfile()
+  chnglg$download(dest = tmp, overwrite = TRUE)
+  df <- readxl::read_excel(path = tmp, sheet = sheetname) |>
+    janitor::clean_names()
+
+  # return the df
+  return(df)
+}
+
 # File processing -------------------------------------------------------------
 
 #' Extract and clean header information from a raw submission template
@@ -551,16 +602,25 @@ process_submission <- function(str_submission_filepath) {
       )
     )
 
+  # create a temporary version with row numbers
+  df_temp <- raw_st |> dplyr::mutate(row_num = dplyr::row_number())
+
   # get the first row that contains header data
   first_row <-
-    raw_st |>
-    dplyr::mutate(row_num = dplyr::row_number()) |>
+    df_temp |>
     dplyr::filter(...1 == "Metric Id") |>
     dplyr::slice_min(order_by = row_num) |>
     dplyr::pull(row_num)
 
+  # ge the last row - should end in P1 (to trim off any text added below the template)
+  last_row <-
+    df_temp |>
+    dplyr::filter(...1 == "P1") |>
+    dplyr::slice_max(order_by = row_num) |>
+    dplyr::pull(row_num)
+
   # trim the df to get just the data
-  raw_st <- raw_st |> dplyr::slice(first_row:dplyr::n())
+  raw_st <- raw_st |> dplyr::slice(first_row:last_row)
 
   # process the data
   ls_details <- process_instructions_data(df_raw = raw_in)
@@ -675,8 +735,14 @@ ingest_data <- function(month = NULL, ms_teams_folder = NULL) {
 #'
 #' @returns Invisibly returns TRUE on success
 update_pinned_data_for_month <- function() {
+  # get a reference to the teams folder
+  ms_teams_folder <- get_ms_teams_folder()
+
   # collate the submissions for a month
-  df_month <- collate_submissions_for_month()
+  df_month <- collate_submissions_for_month(ms_teams_folder = ms_teams_folder)
+
+  # get the issues / changelog
+  df_issues <- get_issues_log(ms_teams_folder = ms_teams_folder)
 
   # get the month_id (textual representation of the month in YYYY-MM format)
   month_id <-
@@ -744,6 +810,15 @@ update_pinned_data_for_month <- function() {
   ) |>
     suppressMessages()
 
+  # write / update the issues log
+  pin_name <- glue::glue("{prefix}issueslog")
+  pins::pin_write(
+    board = board,
+    x = df_issues,
+    name = pin_name,
+    type = "rds"
+  )
+
   # clean up the connections to the temporary files downloaded from SharePoint
   closeAllConnections()
 
@@ -787,9 +862,11 @@ update_pinned_data_for_month <- function() {
 #' \dontrun{
 #' df <- collate_submissions_for_month()
 #' }
-collate_submissions_for_month <- function() {
+collate_submissions_for_month <- function(ms_teams_folder = NULL) {
   # connect to the Teams / SharePoint site
-  folder <- get_ms_teams_folder()
+  if (is.null(ms_teams_folder)) {
+    folder <- get_ms_teams_folder()
+  }
 
   # list folders
   folders <- list_submission_folders(ms_teams_folder = folder)
@@ -925,6 +1002,8 @@ validate_monthly_submissions <- function() {
   issues[[length(issues) + 1]] <- check_month_completeness(df = df)
   # check 4: all months are the same - identify places that are 'abnormal'
   issues[[length(issues) + 1]] <- check_month_consistency(df = df)
+  # check 5: all metric_block | metric_details combo are consistent
+  # issues[[length(issues) + 1]] <- check_metric_alignment(df = df)
 
   # combine issues into a single data frame
   issues_df <- if (length(issues) == 0) {
@@ -1183,6 +1262,73 @@ check_month_consistency <- function(df) {
         field = "month",
         value = paste(place, month, sep = ": "),
         impact = "Month is likely to be incorrect or misfiled",
+        status = "Open"
+      ) |>
+      dplyr::select(
+        issue_type,
+        description,
+        place,
+        field,
+        value,
+        impact,
+        status
+      )
+  }
+}
+
+#' Check for misalignment in metric definitions
+#'
+#' @description
+#' Identifies potential structural inconsistencies in the alignment of
+#' `metric_block` and `metric_details` within a metrics dataset. The function
+#' inspects the number of distinct `place` values associated with each metric
+#' grouping and flags cases where the count deviates from the expected modal
+#' value. Such discrepancies often indicate template misreads or user-altered
+#' submissions.
+#'
+#' @param df data frame of ingested metrics data
+#'
+#' @returns A data frame of issues (possibly empty) with fields suitable for
+#' logging in the data-issues log
+check_metric_alignment <- function(df) {
+  # define suspicious counts - months with fewer records than the modal month count
+  suspicious <- df |>
+    dplyr::filter(
+      demographic_type == "Total",
+      value_type == "rate_per_1000"
+    ) |>
+    dplyr::summarise(
+      .by = c(metric_block, metric_details),
+      n_places = dplyr::n_distinct(place, na.rm = TRUE),
+      places = paste(place, collapse = " | ")
+    )
+
+  # if nothing suspicious, return an empty tibble
+  if (nrow(suspicious) == 15) {
+    return(empty_issue_schema())
+  }
+
+  # otherwise return structured issues
+  if (nrow(suspicious) != 15) {
+    # just print directly the console (for now - may remove in future)
+    suspicious
+
+    # get the unusual records
+    suspicious <- suspicious |> dplyr::slice_min(order_by = n_places)
+
+    cli::cli_alert_danger(
+      "Misalignment in {.val metric_block|metric_details} detected for some submissions, possibly caused by mis-reading the template or by a user-altered template. Check the issues log.",
+      wrap = TRUE
+    )
+
+    suspicious |>
+      dplyr::mutate(
+        issue_type = "Metric anomaly",
+        description = "Misalignment in `metric_block|metric_details`",
+        place = places,
+        field = "metric_block | metric_details",
+        value = paste(metric_block, metric_details, sep = ": "),
+        impact = "Metric details do not align and dashboard unlikely to load",
         status = "Open"
       ) |>
       dplyr::select(
