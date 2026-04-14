@@ -12,6 +12,13 @@ server <- function(input, output, session) {
     pins::pin_meta(board = board, name = pin_name)$version
   )
 
+  # read the pin for issues / changelog
+  df_issues <- pins::pin_reactive_read(
+    board = board,
+    name = pin_name_issues,
+    interval = 60 * 60 * 1000 # check hourly
+  )
+
   # pre-process the data ------------------------------------------------------
   df <- shiny::reactive({
     req(df_raw())
@@ -32,7 +39,11 @@ server <- function(input, output, session) {
   })
 
   df_metrics <- shiny::reactive({
-    df()$metric |> unique() |> factor()
+    # df()$metric |> unique() |> factor()
+    df() |>
+      dplyr::filter_out(metric_block == 15) |>
+      dplyr::distinct(metric) |>
+      dplyr::pull(metric)
   })
 
   df_months <- shiny::reactive({
@@ -92,9 +103,9 @@ server <- function(input, output, session) {
     req(df_selected_place())
 
     df_selected_place() |>
-      dplyr::pull(metric) |>
-      unique() |>
-      factor()
+      dplyr::filter_out(metric_block == 15) |>
+      dplyr::distinct(metric) |>
+      dplyr::pull(metric)
   })
 
   # update ui inputs ----------------------------------------------------------
@@ -144,6 +155,13 @@ server <- function(input, output, session) {
     req(df())
 
     display_national_data_coverage_table(df = df())
+  })
+
+  ## national issues log ------------------------------------------------------
+  output$changelog_table <- reactable::renderReactable({
+    req(df_issues())
+
+    display_issueslog(df_issues = df_issues())
   })
 
   ## place dashboard ----------------------------------------------------------
