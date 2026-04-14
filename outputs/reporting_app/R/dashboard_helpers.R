@@ -19,7 +19,8 @@ add_metric_column_to_df <- function(df_raw) {
     dplyr::mutate(
       # create a new column called 'metric' which uses the metric details rate description
       metric = dplyr::case_when(
-        value_type == "rate_per_1000" ~ metric_details,
+        (metric_id != "P1" & value_type == "rate_per_1000") ~ metric_details,
+        (metric_id == "P1" & value_type == "count") ~ metric_details,
         .default = NA_character_
       )
     ) |>
@@ -85,10 +86,12 @@ suppress_counts <- function(df_raw, suppression_threshold = 6L) {
   df_raw |>
     # ensure counts are suppressed
     dplyr::mutate(
-      .by = c(metric_block, demographic_type, demographic_value),
+      .by = c(place, metric_block, demographic_type, demographic_value),
 
       # precompute whether this row should be suppressed
-      is_small_count = (value_type == "count" & value < suppression_threshold) |
+      is_small_count = (value_type %in%
+        c("count", "patients") &
+        value < suppression_threshold) |
         is.na(value),
 
       # update suppression flag
@@ -179,7 +182,7 @@ summarise_averages <- function(df, selected_place = NULL) {
   # filter to total breakdown and remove pre-calculated rates
   df_temp <-
     df |>
-    dplyr::filter(demographic_type == "Total") |>
+    dplyr::filter(metric_id != "P1", demographic_type == "Total") |>
     # handle suppressed `counts` - we need at least an estimate of the number
     # of people in order to correctly work out the average rate
     dplyr::mutate(
@@ -195,7 +198,11 @@ summarise_averages <- function(df, selected_place = NULL) {
     # remove the newly created fields
     dplyr::select(-c(rate_block, patients_block, value_suppressed)) |>
     # filter out pre-calculated rates
-    dplyr::filter(value_type != "rate_per_1000")
+    dplyr::filter(value_type != "rate_per_1000") |>
+    # include records for P1 (these don't have a rate so don't need above process)
+    dplyr::bind_rows(
+      df |> dplyr::filter(metric_id == "P1", demographic_type == "Total")
+    )
 
   # if a place is selected then filter to that place
   if (!is.null(selected_place)) {
@@ -333,7 +340,14 @@ get_sparkline_data <- function(df, selected_place) {
         (metric_id != "P1" & value_type == "rate_per_1000")
       )
     ) |>
-    dplyr::select(metric_id, metric_details, value_type, month_zoo, value) |>
+    dplyr::select(
+      metric_id,
+      metric_block,
+      metric,
+      value_type,
+      month_zoo,
+      value
+    ) |>
     # fill in missing trendline data with zeroes to avoid issues with
     # {reactable} and {reactablefmtr} not displaying the whole table
     dplyr::mutate(
@@ -344,7 +358,7 @@ get_sparkline_data <- function(df, selected_place) {
     ) |>
     dplyr::summarise(
       trendline = list(value[order(month_zoo)]),
-      .by = c(metric_id, metric_details, value_type)
+      .by = c(metric_block, metric_id, metric, value_type)
     )
 }
 
@@ -369,26 +383,106 @@ get_sparkline_data <- function(df, selected_place) {
 #' }
 get_metric_names <- function(df, include_p1 = FALSE) {
   # get the metric names as a separate tibble
-  df_metric_names <-
-    df |>
-    dplyr::filter(
-      demographic_type == "Total",
-      value_type == "rate_per_1000"
-    )
+  df_metric_names <- df |> dplyr::distinct(metric_block, metric, metric_id)
 
-  # exclude metric P1 (count only) unless specified
+  # exclude metric P1 unless specified
   if (!include_p1) {
-    df_metric_names <-
-      df_metric_names |>
-      dplyr::filter(metric_id != "P1")
+    df_metric_names <- df_metric_names |> dplyr::filter_out(metric_id == "P1")
   }
 
-  df_metric_names <-
-    df_metric_names |>
-    dplyr::select(metric_block, metric_details) |>
-    dplyr::distinct()
+  # remove metric_id
+  df_metric_names <- df_metric_names |> dplyr::select(-metric_id)
 
   return(df_metric_names)
+}
+
+#' Display an issues log as a reactable table
+#'
+#' @description
+#' Creates an interactive `{reactable}` table for viewing an issues log. The
+#' function formats the reporting month, removes internal metadata columns and
+#' applies column-level definitions suitable for long-form text fields
+#' containing markdown.
+#'
+#' @param df_issues A data frame containing the issues log
+#'
+#' @returns
+#' A `{reactable}` widget representing the formatted issues log
+display_issueslog <- function(df_issues) {
+  # process the data a little bit
+  df_issues <-
+    df_issues |>
+    dplyr::mutate(month = format(month, format = "%Y-%m")) |>
+    # dplyr::select(-dplyr::any_of(c("date", "logged_by")))
+    dplyr::select(dplyr::any_of(c(
+      "month",
+      "event_type",
+      "place_affected",
+      "description",
+      "impact",
+      "resolution_action_taken",
+      "status"
+    )))
+
+  table <-
+    reactable::reactable(
+      data = df_issues,
+      # defaultPageSize = 4,
+      wrap = TRUE,
+      sortable = TRUE,
+      resizable = TRUE,
+      filterable = TRUE,
+      highlight = TRUE,
+      defaultColDef = reactable::colDef(html = TRUE),
+      columns = list(
+        month = reactable::colDef(
+          name = "Reporting month",
+          minWidth = 100
+        ),
+
+        event_type = reactable::colDef(
+          name = "Event type",
+          minWidth = 120
+        ),
+
+        place_affected = reactable::colDef(
+          name = "Place affected",
+          minWidth = 120
+        ),
+
+        description = reactable::colDef(
+          name = "Description",
+          minWidth = 350,
+          html = TRUE,
+          cell = function(value) htmltools::includeMarkdown(value)
+        ),
+
+        impact = reactable::colDef(
+          name = "Impact",
+          minWidth = 300,
+          html = TRUE,
+          cell = function(value) htmltools::includeMarkdown(value)
+        ),
+
+        resolution_action_taken = reactable::colDef(
+          name = "Resolution / Action taken",
+          minWidth = 300,
+          html = TRUE,
+          cell = function(value) htmltools::includeMarkdown(value)
+        ),
+
+        status = reactable::colDef(
+          name = "Status",
+          minWidth = 100,
+          align = "center"
+        )
+      ),
+      theme = reactable::reactableTheme(
+        style = list(fontFamily = "Roboto, Arial, sans-serif")
+      )
+    )
+
+  return(table)
 }
 
 # Place-based views -----------------------------------------------------------
@@ -514,31 +608,34 @@ get_dashboard_data <- function(df, month_latest, month_prev, place_selected) {
   # combine the data
   df_dashboard <-
     df_dash_month_curr |>
-    dplyr::select(metric_details, month_current = value) |>
+    dplyr::select(metric_block, metric, month_current = value) |>
     # add in previous month's values and work out the difference
     dplyr::left_join(
       y = df_dash_month_prev |>
-        dplyr::select(metric_details, month_previous = value),
-      by = dplyr::join_by(x$metric_details == y$metric_details)
+        dplyr::select(metric_block, month_previous = value),
+      by = dplyr::join_by(x$metric_block == y$metric_block)
     ) |>
     dplyr::mutate(
-      month_diff = month_current - month_previous
+      month_diff = round(month_current, digits = 1) -
+        round(month_previous, digits = 1)
     ) |>
     # add in average values
     dplyr::left_join(
       y = df_dash_average |>
-        dplyr::select(metric_details, average = value),
-      by = dplyr::join_by(x$metric_details == y$metric_details)
+        dplyr::select(metric_block, average = value),
+      by = dplyr::join_by(x$metric_block == y$metric_block)
     ) |>
     dplyr::mutate(
-      average_diff = month_current - average
+      average_diff = round(month_current, digits = 1) -
+        round(average, digits = 1)
     ) |>
     # add in trendline
     dplyr::left_join(
       y = df_trendline |>
-        dplyr::select(metric_details, trendline),
-      by = dplyr::join_by(x$metric_details == y$metric_details)
-    )
+        dplyr::select(metric_block, trendline),
+      by = dplyr::join_by(x$metric_block == y$metric_block)
+    ) |>
+    dplyr::select(-metric_block)
 
   return(df_dashboard)
 }
@@ -612,7 +709,7 @@ display_dashboard <- function(df, place_selected, month_latest, month_prev) {
           maxWidth = 100
         ),
         columns = list(
-          metric_details = reactable::colDef(
+          metric = reactable::colDef(
             name = "Metric",
             minWidth = 250,
             maxWidth = 1000
@@ -732,7 +829,8 @@ get_data_for_funnel_plot <- function(df, month_selected, metric_selected) {
     dplyr::filter(
       month_zoo == month_selected,
       metric == metric_selected,
-      demographic_type == "Total"
+      demographic_type == "Total",
+      metric_id != "P1" # exclude this metric as a funnel item
     ) |>
     # pivot wider to put the numerator / denominator / rate on the same row
     tidyr::pivot_wider(
@@ -740,7 +838,7 @@ get_data_for_funnel_plot <- function(df, month_selected, metric_selected) {
       values_from = value
     ) |>
     # remove records where there is no numerator data
-    dplyr::filter_out(is.na(count)) |>
+    dplyr::filter_out(is.na(patients)) |>
     # work out some measures
     dplyr::mutate(
       .by = c(metric_block),
@@ -1115,7 +1213,7 @@ national_monthly_averages <- function(df) {
     )
 
   # get the metric names
-  df_metric_names <- get_metric_names(df = df)
+  df_metric_names <- get_metric_names(df = df, include_p1 = TRUE)
 
   # outcome metrics: compute rate_per_1000 from summed numerator + denominator
   df_outcomes <-
@@ -1324,7 +1422,10 @@ get_national_dashboard_data <- function(df, month_latest, month_prev) {
   # get funnel plot data (to work out number of places outside of limits)
   df_funnel <-
     df |>
-    dplyr::filter(month_zoo == month_latest) |>
+    dplyr::filter(
+      month_zoo == month_latest,
+      metric_id != "P1" # exclude P1 as it doesn't make sense to have a funnel plot for this
+    ) |>
     dplyr::distinct(metric) |>
     dplyr::pull(metric) |>
     purrr::map_dfr(
@@ -1355,7 +1456,7 @@ get_national_dashboard_data <- function(df, month_latest, month_prev) {
   # combine the data
   df_dashboard <-
     df_dash_month_curr |>
-    dplyr::select(metric_block, metric_details, month_current = value) |>
+    dplyr::select(metric_block, metric, month_current = value) |>
     # add in previous month's values and work out the difference
     dplyr::left_join(
       y = df_dash_month_prev |>
@@ -1424,7 +1525,7 @@ display_dashboard_national <- function(df, month_latest, month_prev) {
           maxWidth = 100
         ),
         columns = list(
-          metric_details = reactable::colDef(
+          metric = reactable::colDef(
             name = "Metric",
             minWidth = 250,
             maxWidth = 1000
