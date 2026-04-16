@@ -37,7 +37,7 @@ Imports:
     prettyunits,
     purrr,
     reactable,
-    reactablefmtr,
+    reactablefmtr (>= 2.1.0),
     readxl,
     rmarkdown,
     rsconnect,
@@ -46,6 +46,7 @@ Imports:
     tibble,
     tidyr,
     zoo
-Remotes: 
+Remotes:  
     matt-dray/gex,
-    timelyportfolio/dataui
+    timelyportfolio/dataui,
+    kcuilla/reactablefmtr
