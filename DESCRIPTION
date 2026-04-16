@@ -27,6 +27,7 @@ Imports:
     fs,
     gex (>= 0.2.2),
     glue,
+    gt,
     here,
     janitor,
     lubridate,
@@ -46,7 +47,7 @@ Imports:
     tibble,
     tidyr,
     zoo
-Remotes:  
+Remotes: 
     matt-dray/gex,
     timelyportfolio/dataui,
     kcuilla/reactablefmtr
