@@ -42,6 +42,7 @@ Imports:
     readxl,
     rmarkdown,
     rsconnect,
+    scales,
     shiny,
     stringr,
     tibble,
