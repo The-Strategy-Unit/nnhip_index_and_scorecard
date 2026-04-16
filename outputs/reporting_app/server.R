@@ -30,7 +30,9 @@ server <- function(input, output, session) {
       # ensure counts below threshold are suppressed
       suppress_counts() |>
       # prepare columns for use in select inputs
-      factorise_columns()
+      factorise_columns() |>
+      # indicate whether place-month has record of engagement with target cohort
+      add_active_engagement_columns()
   })
 
   # derived lists for UI inputs -----------------------------------------------
