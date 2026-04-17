@@ -30,7 +30,9 @@ server <- function(input, output, session) {
       # ensure counts below threshold are suppressed
       suppress_counts() |>
       # prepare columns for use in select inputs
-      factorise_columns()
+      factorise_columns() |>
+      # indicate whether place-month has record of engagement with target cohort
+      add_active_engagement_columns()
   })
 
   # derived lists for UI inputs -----------------------------------------------
@@ -38,7 +40,9 @@ server <- function(input, output, session) {
     df()$place |> unique() |> sort() |> factor()
   })
 
-  df_metrics <- shiny::reactive({
+  metrics <- shiny::reactive({
+    req(df())
+
     # df()$metric |> unique() |> factor()
     df() |>
       dplyr::filter_out(metric_block == 15) |>
@@ -124,7 +128,8 @@ server <- function(input, output, session) {
     shiny::updateSelectizeInput(
       session = session,
       inputId = "selected_metric",
-      choices = filtered_metrics()
+      # choices = filtered_metrics()
+      choices = metrics()
     )
   })
 

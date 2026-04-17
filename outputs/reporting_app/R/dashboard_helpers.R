@@ -153,6 +153,43 @@ factorise_columns <- function(df_raw) {
     )
 }
 
+add_active_engagement_columns <- function(df) {
+  # get a summary of engagement for each place-month
+  df_engagement <-
+    df |>
+    dplyr::filter(
+      metric_id == "P1",
+      demographic_type == "Total",
+      value_type == "count"
+    ) |>
+    dplyr::distinct(place, month, value) |>
+    dplyr::mutate(
+      # flag if the place-month is actively engaged with its cohort
+      flag_actively_engaged = dplyr::case_when(
+        !is.na(value) | value > 0 ~ TRUE,
+        .default = FALSE
+      ),
+
+      # record the number of people engaged this month
+      engagement_num = value
+    ) |>
+    # select the minimum output
+    dplyr::select(c(
+      place,
+      month,
+      flag_actively_engaged,
+      engagement_num
+    ))
+
+  # left-join the engagement columns to df
+  df <-
+    df |>
+    dplyr::left_join(
+      y = df_engagement,
+      by = dplyr::join_by(x$place == y$place, x$month == y$month)
+    )
+}
+
 # General functions -----------------------------------------------------------
 
 #' Summarise average metric values for a given place
@@ -866,35 +903,47 @@ get_data_for_funnel_plot <- function(df, month_selected, metric_selected) {
 
       # categorise points based on their position relative to confidence limits
       marker_category = dplyr::case_when(
+        # categorise (and colour) Places who were not engaged
+        !flag_actively_engaged ~ "Not engaged",
+        # outside 99%
         !(dplyr::between(
           x = rate_per_1000,
           left = lower_99,
           right = upper_99
         )) ~ "Outside 99%",
+        # outside 95% (but within 99%)
         !(dplyr::between(
           x = rate_per_1000,
           left = lower_95,
           right = upper_95
         )) ~ "Outside 95%",
+        # within 95%
         .default = "Within 95%"
       ) |>
-        factor(levels = c("Outside 99%", "Outside 95%", "Within 95%")),
+        factor(
+          levels = c("Not engaged", "Outside 99%", "Outside 95%", "Within 95%")
+        ),
 
       # draft hover text for the points
       hover_count = dplyr::if_else(
         condition = count_suppressed,
         true = "Below 6",
-        false = prettyunits::pretty_round(count, digits = 0) |> as.character()
+        false = scales::comma(count)
       ),
-      # hover_count = "test",
-      hover_patients = prettyunits::pretty_round(patients, digits = 0) |>
-        as.character(),
-      hover_rate = prettyunits::pretty_round(rate_per_1000, digits = 1) |>
-        as.character(),
+      hover_patients = scales::comma(patients),
+      hover_rate = scales::comma(rate_per_1000, accuracy = 0.1),
+      hover_engagement = dplyr::if_else(
+        condition = flag_actively_engaged,
+        true = glue::glue(
+          "Active caseload this month = <b>{scales::comma(engagement_num)}<b>"
+        ),
+        false = "Engagement status = <b>not yet engaging with target cohort<b>"
+      ),
       hover_text = glue::glue(
         "<b>{place}</b><br>",
         "{hover_count} / {hover_patients}<br>",
-        "Rate per 1,000 = {hover_rate}"
+        "Rate per 1,000 = <b>{hover_rate}</b><br>",
+        "{hover_engagement}"
       )
     )
 
@@ -986,10 +1035,12 @@ get_funnel_plot <- function(
   colour_outside_99 <- adjustcolor(col = "#5881c1", red.f = 2.5)
   colour_outside_95 <- adjustcolor(col = "#5881c1", red.f = 2.0)
   colour_within_95 <- "#5881c1"
+  colour_not_engaged <- "#686f73"
   marker_colours <- c(
     "Outside 99%" = colour_outside_99,
     "Outside 95%" = colour_outside_95,
-    "Within 95%" = colour_within_95
+    "Within 95%" = colour_within_95,
+    "Not engaged" = colour_not_engaged
   )
 
   # define a list of limits
@@ -1089,7 +1140,11 @@ get_funnel_plot <- function(
       marker = list(
         size = 18,
         color = "#f9bd07",
-        line = list(color = "#5881c1", width = 4)
+        line = list(
+          color = ~marker_category,
+          colors = marker_colours,
+          width = 4
+        )
       ),
       hoverinfo = "text",
       text = ~hover_text
@@ -1119,6 +1174,48 @@ get_funnel_plot <- function(
   return(p)
 }
 
+#' Compute funnel plot control limits
+#'
+#' @description
+#' This function generate the 95% and 99% control limits used in a funnel plot
+#' for rate-based indicators. It takes a dataset containing the number of
+#' patients (denominator) and the overall rate for the indicator and returns a
+#' smoothed set of control-limit curves across the observed range of patient
+#' counts.
+#'
+#' The limits are calculated using Poisson-based confidence intervals for the
+#' expected number of events at each value of the denominator. These are then
+#' converted into rates per 1,000 to align with the funnel plot scale.
+#'
+#' @param df_funnel A tibble containing the processed funnel plot data.
+#' Must include the following columns:
+#'   - `patients`: the denominator for each unit (e.g., Place size)
+#'   - `overall_rate`: the overall event rate (as a proportion), identical for all
+#'
+#' @returns A tibble with 400 rows containing:
+#'   - `patients`: a sequence spanning the observd range of denominators
+#'   - `expected`: expected event count at each denominator
+#'   - `lower_95`, `upper_95`: 95% Poisson control limits (per 1,000)
+#'   - `lower_99`, `upper_99`: 99% Poisson control limits (per 1,000)
+#'   - `central`: the overall rate expressed per 1,000
+#'
+#' @details
+#' The function:
+#' 1. Extracts the overall rate from the input data
+#' 2. Creates a smooth sequence of denominators (n = 400) across the observed
+#'    range
+#' 3. Computes expected counts as `patients * overall_rate`
+#' 4. Applies Poisson-based confidence interval formulas using chi-square
+#'    quantiles to derive 95% and 99% limits
+#' 5. Converts limits into rates per 1,000 to match the funnel plot scale
+#'
+#' These limits can be plotted as smooth curves behind observed data points to
+#' identify statistically significant outliers.
+#'
+#' @examples
+#' \dontrun{
+#' limits <- computer_funnel_limits(df_funnel)
+#' }
 compute_funnel_limits <- function(df_funnel) {
   # get the overall rate
   overall_rate <- df_funnel$overall_rate |> unique()
@@ -1155,6 +1252,7 @@ compute_funnel_limits <- function(df_funnel) {
       central = overall_rate * 1000
     )
 }
+
 
 # National views --------------------------------------------------------------
 

@@ -27,6 +27,7 @@ Imports:
     fs,
     gex (>= 0.2.2),
     glue,
+    gt,
     here,
     janitor,
     lubridate,
@@ -37,10 +38,11 @@ Imports:
     prettyunits,
     purrr,
     reactable,
-    reactablefmtr,
+    reactablefmtr (>= 2.1.0),
     readxl,
     rmarkdown,
     rsconnect,
+    scales,
     shiny,
     stringr,
     tibble,
@@ -48,4 +50,5 @@ Imports:
     zoo
 Remotes: 
     matt-dray/gex,
-    timelyportfolio/dataui
+    timelyportfolio/dataui,
+    kcuilla/reactablefmtr
