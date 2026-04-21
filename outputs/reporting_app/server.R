@@ -228,4 +228,10 @@ server <- function(input, output, session) {
       month_selected = input$selected_month |> zoo::as.yearmon()
     )
   })
+
+  ## engagement table ---------------------------------------------------------
+  output$engagement_table <- reactable::renderReactable({
+    req(df())
+    display_engagement_table(df = df())
+  })
 }
