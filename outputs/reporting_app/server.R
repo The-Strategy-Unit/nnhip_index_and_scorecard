@@ -224,8 +224,12 @@ server <- function(input, output, session) {
   )
 
   ## engagement table ---------------------------------------------------------
-  output$engagement_table <- reactable::renderReactable({
-    req(df())
-    display_engagement_table(df = df())
-  })
+  # module server call
+  mod_place_engagement_server(
+    id = "place_engagement",
+    df = shiny::reactive({
+      req(df())
+      df()
+    })
+  )
 }

@@ -159,21 +159,23 @@ ui <- function(request) {
             # funnel plot ----
             mod_place_funnel_ui("place_funnel"),
 
-            bslib::nav_panel(
-              title = "Engagement",
-              icon = bsicons::bs_icon("table"),
-              bslib::layout_sidebar(
-                fillable = TRUE,
-                open = FALSE,
-                sidebar = bslib::sidebar(
-                  open = FALSE,
-                  shiny::includeMarkdown("descriptions/place_engagement.md")
-                ),
-                bslib::card_body(
-                  reactable::reactableOutput("engagement_table")
-                )
-              )
-            )
+            # engagement table ----
+            mod_place_engagement_ui("place_engagement")
+            # bslib::nav_panel(
+            #   title = "Engagement",
+            #   icon = bsicons::bs_icon("table"),
+            #   bslib::layout_sidebar(
+            #     fillable = TRUE,
+            #     open = FALSE,
+            #     sidebar = bslib::sidebar(
+            #       open = FALSE,
+            #       shiny::includeMarkdown("descriptions/place_engagement.md")
+            #     ),
+            #     bslib::card_body(
+            #       reactable::reactableOutput("engagement_table")
+            #     )
+            #   )
+            # )
           )
         )
       )
