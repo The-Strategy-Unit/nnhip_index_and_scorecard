@@ -40,19 +40,51 @@ ui <- function(request) {
           bslib::nav_panel(
             title = "Overview",
             icon = bsicons::bs_icon("table"),
-            bslib::card_body(reactable::reactableOutput("national_table"))
+            bslib::layout_sidebar(
+              fillable = TRUE,
+              sidebar = bslib::sidebar(
+                open = FALSE,
+                shiny::includeMarkdown("descriptions/national_overview.md")
+              ),
+              bslib::card_body(
+                reactable::reactableOutput("national_table"),
+                fill = TRUE
+              )
+            )
           ),
           bslib::nav_panel(
             title = "Data coverage",
             icon = bsicons::bs_icon("ui-checks-grid"),
-            bslib::card_body(reactable::reactableOutput(
-              "national_data_coverage_table"
-            ))
+            # bslib::card_body(reactable::reactableOutput(
+            #   "national_data_coverage_table"
+            # ))
+            bslib::layout_sidebar(
+              fillable = TRUE,
+              sidebar = bslib::sidebar(
+                open = FALSE,
+                shiny::includeMarkdown("descriptions/national_coverage.md")
+              ),
+              bslib::card_body(
+                reactable::reactableOutput("national_data_coverage_table"),
+                fill = TRUE
+              )
+            )
           ),
           bslib::nav_panel(
             title = "Change log",
             icon = bsicons::bs_icon("journal-text"),
-            bslib::card_body(reactable::reactableOutput("changelog_table"))
+            # bslib::card_body(reactable::reactableOutput("changelog_table"))
+            bslib::layout_sidebar(
+              fillable = TRUE,
+              sidebar = bslib::sidebar(
+                open = FALSE,
+                shiny::includeMarkdown("descriptions/national_changelog.md")
+              ),
+              bslib::card_body(
+                reactable::reactableOutput("changelog_table"),
+                fill = TRUE
+              )
+            )
           )
         )
       )
@@ -122,25 +154,55 @@ ui <- function(request) {
             full_screen = TRUE,
 
             bslib::nav_panel(
-              title = "Dashboard table",
+              title = "Overview",
               icon = bsicons::bs_icon("table"),
-              bslib::card_body(
-                reactable::reactableOutput("place_table"),
-                fill = TRUE
+              bslib::layout_sidebar(
+                fillable = TRUE,
+                sidebar = bslib::sidebar(
+                  open = FALSE,
+                  shiny::includeMarkdown("descriptions/place_overview.md")
+                ),
+                bslib::card_body(
+                  reactable::reactableOutput("place_table"),
+                  fill = TRUE
+                )
               )
             ),
 
             bslib::nav_panel(
               title = "Funnel plot",
               icon = bsicons::bs_icon("funnel"),
-              bslib::card_body(
-                plotly::plotlyOutput(
-                  "place_funnel",
-                  height = "100%",
-                  fill = TRUE
+              bslib::layout_sidebar(
+                fillable = TRUE,
+                sidebar = bslib::sidebar(
+                  open = FALSE,
+                  shiny::includeMarkdown("descriptions/place_funnel.md")
                 ),
-                fill = TRUE,
-                height = "100%"
+                bslib::card_body(
+                  plotly::plotlyOutput(
+                    "place_funnel",
+                    height = "100%",
+                    fill = TRUE
+                  ),
+                  fill = TRUE,
+                  height = "100%"
+                )
+              )
+            ),
+
+            bslib::nav_panel(
+              title = "Engagement",
+              icon = bsicons::bs_icon("table"),
+              bslib::layout_sidebar(
+                fillable = TRUE,
+                open = FALSE,
+                sidebar = bslib::sidebar(
+                  open = FALSE,
+                  shiny::includeMarkdown("descriptions/place_engagement.md")
+                ),
+                bslib::card_body(
+                  reactable::reactableOutput("engagement_table")
+                )
               )
             )
           )
