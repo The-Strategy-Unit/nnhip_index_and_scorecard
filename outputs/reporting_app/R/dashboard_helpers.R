@@ -1253,6 +1253,196 @@ compute_funnel_limits <- function(df_funnel) {
     )
 }
 
+#' Build the place engagement table data
+#'
+#' @description
+#' This function prepares the dataset required for the place-level engagement table in the dashboard. It produces one row per place, containing:
+#' - `cohort_size` - the most recent estimate of the number of patients in the target cohort (value_type = "patients", demographic_type = "Total")
+#' - monthly engagement counts (metric P1), pivoted wide so that each month appears as a separate column.
+#' - `engagement_rate` - the proportion of the cohort engaged in the most recent month, calculated as:
+#'
+#' engagement_num / patients_latest
+#'
+#' where:
+#' - `patients_latest` is the maximum reported patient count in the latest month for each place (taken across all metrics that report it).
+#' - `engagement_num` is the P1 engagement count for the latest month. If a place has only missing values for P1, the numerator is treated as 0.
+#'
+#' @param df A tibble of metric data.
+#'
+#' @returns A tibble with one row per place and columns:
+#' - `place`,
+#' - `cohort_size`,
+#' - monthly engagement counts
+#' - `engagement_rate`
+#'
+#' @examples
+#' \dontrun{
+#' engagement_table <- get_data_for_engagement_table(df = df)
+#' }
+get_data_for_engagement_table <- function(df) {
+  # get the cohort size (most recent month)
+  part1_cohort <-
+    df |>
+    dplyr::filter(
+      demographic_type == "Total",
+      value_type == "patients",
+      !is.na(value)
+    ) |>
+    dplyr::group_by(place) |>
+    dplyr::filter(month_zoo == max(month_zoo, na.rm = TRUE)) |>
+    dplyr::summarise(cohort_size = max(value, na.rm = TRUE), .groups = "drop")
+
+  # get the number of people engaged each month
+  part2_engagement_month <-
+    df |>
+    dplyr::filter(metric_id == "P1", demographic_type == "Total") |>
+    dplyr::distinct(place, month_zoo, value) |>
+    tidyr::pivot_wider(
+      names_from = month_zoo,
+      values_from = value
+    )
+
+  # get the engagement rate for the latest month
+  # start with the denominator (latest values for the cohort)
+  part3_engagement_rate_denom <-
+    df |>
+    # keep only rows that can contribute to the denominator
+    dplyr::filter(
+      demographic_type == "Total",
+      value_type == "patients",
+      !is.na(value)
+    ) |>
+    # get the latest month per place
+    dplyr::group_by(place) |>
+    dplyr::filter(month_zoo == max(month_zoo, na.rm = TRUE)) |>
+    # take the most reliable denominator (max value)
+    dplyr::summarise(
+      patients_latest = max(value, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  # next is the engaged proportion (latest values per place)
+  part3_engagement_rate_num <-
+    df |>
+    # keep only rows that can contribute to the numerator
+    dplyr::filter(metric_id == "P1", demographic_type == "Total") |>
+    # get the latest month per place
+    dplyr::group_by(place) |>
+    dplyr::filter(month_zoo == max(month_zoo, na.rm = TRUE)) |>
+    dplyr::summarise(
+      engagement_num = max(tidyr::replace_na(value, 0)),
+      .groups = "drop"
+    )
+
+  # join these together and work out the rate
+  part3_engagement_rate <-
+    dplyr::left_join(
+      x = part3_engagement_rate_denom,
+      y = part3_engagement_rate_num,
+      by = dplyr::join_by(x$place == y$place)
+    ) |>
+    dplyr::mutate(engagement_rate = engagement_num / patients_latest) |>
+    dplyr::select(place, engagement_rate)
+
+  # combine the components to the output
+  tibble::tibble(place = expected_places) |>
+    # add in the cohort size
+    dplyr::left_join(
+      y = part1_cohort,
+      by = dplyr::join_by(x$place == y$place)
+    ) |>
+    # add in monthly engagement rate
+    dplyr::left_join(
+      y = part2_engagement_month,
+      by = dplyr::join_by(x$place == y$place)
+    ) |>
+    # add in latest engagement rate
+    dplyr::left_join(
+      y = part3_engagement_rate,
+      by = dplyr::join_by(x$place == y$place)
+    )
+}
+
+#' Render the place-level engagement reactable table
+#'
+#' @description
+#' This function creates an interactive {reactable} table for displaying
+#' place-level engagement data. It is designed for use in the dashboard and
+#' includes several usability enhancements:
+#' - **Sticky header row** - remains visible when scrolling vertically
+#' - **Sticky left column** - the `place` column stays fixed when scrolling
+#'   horizontally across many month columns
+#' - **Automatic numeric formatting** - all numeric columns (including month
+#'   columns and cohort sizes) are right-aligned, formatted as integers and
+#'   constrained to a reasonable maximum width.
+#' - **Percentage formatting** - the `engagement_rate` column is displayed as
+#'   a percentage with one decimal place
+#' - **Horizontal scrolling** - enabled via `fullWidth = FALSE`, ensuring wide
+#'   tables remain readable
+#'
+#' @param df A tibble of metric data.
+#'
+#' @returns A {reactable} widget suitable for display in a Shiny app or R
+#' Markdown dashboard.
+display_engagement_table <- function(df) {
+  # get the engagement data
+  df_engagement <- get_data_for_engagement_table(df = df)
+
+  df_engagement |>
+    reactable::reactable(
+      pagination = FALSE,
+      highlight = TRUE,
+      resizable = TRUE,
+      wrap = FALSE,
+      fullWidth = FALSE, # enables horizontal scrolling
+
+      # default column behaviour
+      defaultColDef = reactable::colDef(
+        align = "right",
+        format = reactable::colFormat(digits = 0, separators = TRUE),
+        minWidth = 90,
+        maxWidth = 100
+      ),
+
+      # column formating
+      columns = list(
+        place = reactable::colDef(
+          sticky = "left",
+          header = "Place",
+          align = "left",
+          # width = 250,
+          minWidth = 180,
+          maxWidth = 1000
+        ),
+
+        cohort_size = reactable::colDef(
+          header = "Cohort size",
+          minWidth = 110,
+          maxWidth = 120
+        ),
+
+        engagement_rate = reactable::colDef(
+          header = "Engagement rate",
+          format = reactable::colFormat(percent = TRUE, digits = 1),
+          minWidth = 150,
+          maxWidth = 160,
+          align = "right"
+        )
+      ),
+      theme = reactable::reactableTheme(
+        style = list(
+          headerStyle = list(
+            position = "sticky",
+            top = 0,
+            zIndex = 3,
+            background = "#fff"
+          ),
+          fontFamily = "Roboto, Arial, sans-serif"
+        )
+      )
+    )
+}
+
 
 # National views --------------------------------------------------------------
 
