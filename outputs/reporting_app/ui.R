@@ -169,26 +169,8 @@ ui <- function(request) {
               )
             ),
 
-            bslib::nav_panel(
-              title = "Funnel plot",
-              icon = bsicons::bs_icon("funnel"),
-              bslib::layout_sidebar(
-                fillable = TRUE,
-                sidebar = bslib::sidebar(
-                  open = FALSE,
-                  shiny::includeMarkdown("descriptions/place_funnel.md")
-                ),
-                bslib::card_body(
-                  plotly::plotlyOutput(
-                    "place_funnel",
-                    height = "100%",
-                    fill = TRUE
-                  ),
-                  fill = TRUE,
-                  height = "100%"
-                )
-              )
-            ),
+            # funnel plot ----
+            mod_place_funnel_ui("place_funnel"),
 
             bslib::nav_panel(
               title = "Engagement",

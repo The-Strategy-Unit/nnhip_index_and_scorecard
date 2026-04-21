@@ -191,43 +191,29 @@ server <- function(input, output, session) {
   })
 
   ## place funnel -------------------------------------------------------------
-  # cache funnel data for month:metric for improved UX ---
-  df_funnel <- shiny::reactive({
-    req(df_selected_month(), input$selected_month, input$selected_metric)
-
-    get_data_for_funnel_plot(
-      df = df_selected_month(),
-      month_selected = input$selected_month |> zoo::as.yearmon(),
-      metric_selected = input$selected_metric
-    )
-  }) |>
-    shiny::bindCache(df_version(), input$selected_month, input$selected_metric)
-
-  # cache limits data for month:metric for improved UX ---
-  df_limits <- shiny::reactive({
-    req(df_funnel())
-
-    compute_funnel_limits(df_funnel = df_funnel())
-  }) |>
-    shiny::bindCache(df_version(), input$selected_month, input$selected_metric)
-
-  # render the funnel ---
-  output$place_funnel <- plotly::renderPlotly({
-    req(
-      df_selected_month(),
-      df_funnel(),
-      input$selected_place,
+  mod_place_funnel_server(
+    id = "place_funnel",
+    df = shiny::reactive({
+      req(df_selected_month())
+      df_selected_month()
+    }),
+    place = shiny::reactive({
+      req(input$selected_place)
+      input$selected_place
+    }),
+    metric = shiny::reactive({
+      req(input$selected_metric)
       input$selected_metric
-    )
-
-    get_funnel_plot(
-      df_funnel = df_funnel(),
-      df_limits = df_limits(),
-      place_selected = input$selected_place,
-      metric_selected = input$selected_metric,
-      month_selected = input$selected_month |> zoo::as.yearmon()
-    )
-  })
+    }),
+    month = shiny::reactive({
+      req(input$selected_month)
+      input$selected_month |> zoo::as.yearmon()
+    }),
+    df_version = shiny::reactive({
+      req(df_version)
+      df_version
+    })
+  )
 
   ## engagement table ---------------------------------------------------------
   output$engagement_table <- reactable::renderReactable({
