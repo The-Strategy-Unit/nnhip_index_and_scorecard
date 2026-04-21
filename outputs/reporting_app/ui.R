@@ -153,21 +153,8 @@ ui <- function(request) {
             id = "place_tabs",
             full_screen = TRUE,
 
-            bslib::nav_panel(
-              title = "Overview",
-              icon = bsicons::bs_icon("table"),
-              bslib::layout_sidebar(
-                fillable = TRUE,
-                sidebar = bslib::sidebar(
-                  open = FALSE,
-                  shiny::includeMarkdown("descriptions/place_overview.md")
-                ),
-                bslib::card_body(
-                  reactable::reactableOutput("place_table"),
-                  fill = TRUE
-                )
-              )
-            ),
+            # overview table ----
+            mod_place_overview_ui("place_overview"),
 
             # funnel plot ----
             mod_place_funnel_ui("place_funnel"),

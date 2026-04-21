@@ -170,27 +170,35 @@ server <- function(input, output, session) {
   })
 
   ## place dashboard ----------------------------------------------------------
+  # card header text
   output$place_header <- shiny::renderText({
     req(input$selected_place)
     input$selected_place
   })
 
-  output$place_table <- reactable::renderReactable({
-    req(
-      df(),
-      input$selected_place,
-      filtered_month_current(),
+  # module server call
+  mod_place_overview_server(
+    id = "place_overview",
+    df = shiny::reactive({
+      req(df())
+      df()
+    }),
+    place = shiny::reactive({
+      req(input$selected_place)
+      input$selected_place
+    }),
+    month_current = shiny::reactive({
+      req(filtered_month_current())
+      filtered_month_current()
+    }),
+    month_previous = shiny::reactive({
+      req(filtered_month_previous())
       filtered_month_previous()
-    )
-    display_dashboard(
-      df = df(),
-      place_selected = input$selected_place,
-      month_latest = filtered_month_current(),
-      month_prev = filtered_month_previous()
-    )
-  })
+    })
+  )
 
   ## place funnel -------------------------------------------------------------
+  # module server call
   mod_place_funnel_server(
     id = "place_funnel",
     df = shiny::reactive({
