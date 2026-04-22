@@ -8,8 +8,13 @@ server <- function(input, output, session) {
   )
 
   # read the pin version for use as a cache key
-  df_version <- shiny::reactive(
+  pin_version <- shiny::reactive(
     pins::pin_meta(board = board, name = pin_name)$version
+  )
+
+  # read the pin created date (for the version)
+  pin_time <- shiny::reactive(
+    pins::pin_meta(board = board, name = pin_name)$created
   )
 
   # read the pin for issues / changelog
@@ -42,8 +47,6 @@ server <- function(input, output, session) {
 
   metrics <- shiny::reactive({
     req(df())
-
-    # df()$metric |> unique() |> factor()
     df() |>
       dplyr::filter_out(metric_block == 15) |>
       dplyr::distinct(metric) |>
@@ -113,6 +116,16 @@ server <- function(input, output, session) {
   })
 
   # update ui inputs ----------------------------------------------------------
+  # update the data refresh time
+  mod_utils_last_updated_server(
+    id = "national",
+    time = pin_time
+  )
+  mod_utils_last_updated_server(
+    id = "place",
+    time = pin_time
+  )
+
   # update the available places
   shiny::observe({
     shiny::updateSelectizeInput(
@@ -145,48 +158,23 @@ server <- function(input, output, session) {
 
   # outputs -------------------------------------------------------------------
   ## national dashboard -------------------------------------------------------
-  # output$national_table <- reactable::renderReactable({
-  #   req(df(), filtered_month_current(), filtered_month_previous())
-
-  #   display_dashboard_national(
-  #     df = df(),
-  #     month_latest = filtered_month_current(),
-  #     month_prev = filtered_month_previous()
-  #   )
-  # })
-
   mod_national_overview_server(
     id = "national_overview",
-    df = shiny::reactive({
-      shiny::req(df())
-      df()
-    }),
-    month_current = shiny::reactive({
-      shiny::req(filtered_month_current())
-      filtered_month_current()
-    }),
-    month_previous = shiny::reactive({
-      shiny::req(filtered_month_previous())
-      filtered_month_previous()
-    })
+    df = df,
+    month_current = filtered_month_current,
+    month_previous = filtered_month_previous
   )
 
   ## national data coverage ---------------------------------------------------
   mod_national_coverage_server(
     id = "national_coverage",
-    df = shiny::reactive({
-      shiny::req(df())
-      df()
-    })
+    df = df
   )
 
   ## national issues log ------------------------------------------------------
   mod_national_changelog_server(
     id = "national_changelog",
-    df_issues = shiny::reactive({
-      shiny::req(df_issues())
-      df_issues()
-    })
+    df_issues = df_issues
   )
 
   ## place dashboard ----------------------------------------------------------
@@ -199,32 +187,20 @@ server <- function(input, output, session) {
   # module server call
   mod_place_overview_server(
     id = "place_overview",
-    df = shiny::reactive({
-      shiny::req(df())
-      df()
-    }),
+    df = df,
     place = shiny::reactive({
       shiny::req(input$selected_place)
       input$selected_place
     }),
-    month_current = shiny::reactive({
-      shiny::req(filtered_month_current())
-      filtered_month_current()
-    }),
-    month_previous = shiny::reactive({
-      shiny::req(filtered_month_previous())
-      filtered_month_previous()
-    })
+    month_current = filtered_month_current,
+    month_previous = filtered_month_previous
   )
 
   ## place funnel -------------------------------------------------------------
   # module server call
   mod_place_funnel_server(
     id = "place_funnel",
-    df = shiny::reactive({
-      req(df_selected_month())
-      df_selected_month()
-    }),
+    df = df_selected_month,
     place = shiny::reactive({
       req(input$selected_place)
       input$selected_place
@@ -238,8 +214,8 @@ server <- function(input, output, session) {
       input$selected_month |> zoo::as.yearmon()
     }),
     df_version = shiny::reactive({
-      req(df_version)
-      df_version
+      req(pin_version)
+      pin_version
     })
   )
 
@@ -247,9 +223,6 @@ server <- function(input, output, session) {
   # module server call
   mod_place_engagement_server(
     id = "place_engagement",
-    df = shiny::reactive({
-      req(df())
-      df()
-    })
+    df = df
   )
 }
