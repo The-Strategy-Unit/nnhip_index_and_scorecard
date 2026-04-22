@@ -145,15 +145,31 @@ server <- function(input, output, session) {
 
   # outputs -------------------------------------------------------------------
   ## national dashboard -------------------------------------------------------
-  output$national_table <- reactable::renderReactable({
-    req(df(), filtered_month_current(), filtered_month_previous())
+  # output$national_table <- reactable::renderReactable({
+  #   req(df(), filtered_month_current(), filtered_month_previous())
 
-    display_dashboard_national(
-      df = df(),
-      month_latest = filtered_month_current(),
-      month_prev = filtered_month_previous()
-    )
-  })
+  #   display_dashboard_national(
+  #     df = df(),
+  #     month_latest = filtered_month_current(),
+  #     month_prev = filtered_month_previous()
+  #   )
+  # })
+
+  mod_national_overview_server(
+    id = "national_overview",
+    df = shiny::reactive({
+      shiny::req(df())
+      df()
+    }),
+    month_current = shiny::reactive({
+      shiny::req(filtered_month_current())
+      filtered_month_current()
+    }),
+    month_previous = shiny::reactive({
+      shiny::req(filtered_month_previous())
+      filtered_month_previous()
+    })
+  )
 
   ## national data coverage ---------------------------------------------------
   mod_national_coverage_server(

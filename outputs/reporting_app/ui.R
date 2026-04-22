@@ -37,21 +37,24 @@ ui <- function(request) {
         # main ----
         bslib::navset_card_tab(
           id = "national_tabs",
-          bslib::nav_panel(
-            title = "Overview",
-            icon = bsicons::bs_icon("table"),
-            bslib::layout_sidebar(
-              fillable = TRUE,
-              sidebar = bslib::sidebar(
-                open = FALSE,
-                shiny::includeMarkdown("descriptions/national_overview.md")
-              ),
-              bslib::card_body(
-                reactable::reactableOutput("national_table"),
-                fill = TRUE
-              )
-            )
-          ),
+          # bslib::nav_panel(
+          #   title = "Overview",
+          #   icon = bsicons::bs_icon("table"),
+          #   bslib::layout_sidebar(
+          #     fillable = TRUE,
+          #     sidebar = bslib::sidebar(
+          #       open = FALSE,
+          #       shiny::includeMarkdown("descriptions/national_overview.md")
+          #     ),
+          #     bslib::card_body(
+          #       reactable::reactableOutput("national_table"),
+          #       fill = TRUE
+          #     )
+          #   )
+          # ),
+
+          # overview metrics
+          mod_national_overview_ui("national_overview"),
 
           # data coverage table
           mod_national_coverage_ui("national_coverage"),

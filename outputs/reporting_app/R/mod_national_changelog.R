@@ -26,7 +26,6 @@ mod_national_changelog_ui <- function(id) {
 # server ----
 mod_national_changelog_server <- function(id, df_issues) {
   shiny::moduleServer(id, function(input, output, session) {
-    # code goes here
     output$changelog_table <- reactable::renderReactable({
       req(df_issues())
 
