@@ -163,11 +163,13 @@ server <- function(input, output, session) {
   })
 
   ## national issues log ------------------------------------------------------
-  output$changelog_table <- reactable::renderReactable({
-    req(df_issues())
-
-    display_issueslog(df_issues = df_issues())
-  })
+  mod_national_changelog_server(
+    id = "national_changelog",
+    df_issues = shiny::reactive({
+      req(df_issues())
+      df_issues()
+    })
+  )
 
   ## place dashboard ----------------------------------------------------------
   # card header text

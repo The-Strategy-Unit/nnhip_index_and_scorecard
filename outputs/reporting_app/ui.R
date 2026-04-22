@@ -55,9 +55,6 @@ ui <- function(request) {
           bslib::nav_panel(
             title = "Data coverage",
             icon = bsicons::bs_icon("ui-checks-grid"),
-            # bslib::card_body(reactable::reactableOutput(
-            #   "national_data_coverage_table"
-            # ))
             bslib::layout_sidebar(
               fillable = TRUE,
               sidebar = bslib::sidebar(
@@ -70,22 +67,9 @@ ui <- function(request) {
               )
             )
           ),
-          bslib::nav_panel(
-            title = "Change log",
-            icon = bsicons::bs_icon("journal-text"),
-            # bslib::card_body(reactable::reactableOutput("changelog_table"))
-            bslib::layout_sidebar(
-              fillable = TRUE,
-              sidebar = bslib::sidebar(
-                open = FALSE,
-                shiny::includeMarkdown("descriptions/national_changelog.md")
-              ),
-              bslib::card_body(
-                reactable::reactableOutput("changelog_table"),
-                fill = TRUE
-              )
-            )
-          )
+
+          # change / issues table
+          mod_national_changelog_ui("national_changelog")
         )
       )
     ),
@@ -161,21 +145,6 @@ ui <- function(request) {
 
             # engagement table ----
             mod_place_engagement_ui("place_engagement")
-            # bslib::nav_panel(
-            #   title = "Engagement",
-            #   icon = bsicons::bs_icon("table"),
-            #   bslib::layout_sidebar(
-            #     fillable = TRUE,
-            #     open = FALSE,
-            #     sidebar = bslib::sidebar(
-            #       open = FALSE,
-            #       shiny::includeMarkdown("descriptions/place_engagement.md")
-            #     ),
-            #     bslib::card_body(
-            #       reactable::reactableOutput("engagement_table")
-            #     )
-            #   )
-            # )
           )
         )
       )
