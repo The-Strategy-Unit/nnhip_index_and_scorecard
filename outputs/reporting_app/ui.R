@@ -23,8 +23,13 @@ ui <- function(request) {
         # sidebar ----
         sidebar = bslib::sidebar(
           shiny::div(
-            # add some branding
+            # separator line
             shiny::hr(),
+
+            # show when the data was last updated
+            mod_utils_last_updated_ui("national"),
+
+            # SU logo
             shiny::tags$div(
               style = "text-align:center; padding: 10px 0;",
               shiny::tags$img(
@@ -37,21 +42,6 @@ ui <- function(request) {
         # main ----
         bslib::navset_card_tab(
           id = "national_tabs",
-          # bslib::nav_panel(
-          #   title = "Overview",
-          #   icon = bsicons::bs_icon("table"),
-          #   bslib::layout_sidebar(
-          #     fillable = TRUE,
-          #     sidebar = bslib::sidebar(
-          #       open = FALSE,
-          #       shiny::includeMarkdown("descriptions/national_overview.md")
-          #     ),
-          #     bslib::card_body(
-          #       reactable::reactableOutput("national_table"),
-          #       fill = TRUE
-          #     )
-          #   )
-          # ),
 
           # overview metrics
           mod_national_overview_ui("national_overview"),
@@ -104,11 +94,14 @@ ui <- function(request) {
               )
             ),
 
+            # bookmark button
+            shiny::bookmarkButton(label = "Bookmark", width = "100%"),
+
             # divider
             shiny::hr(),
 
-            # bookmark button
-            shiny::bookmarkButton(label = "Bookmark"),
+            # show when the data was last updated
+            mod_utils_last_updated_ui("place"),
 
             # add some branding
             shiny::tags$div(
