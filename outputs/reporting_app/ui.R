@@ -52,21 +52,9 @@ ui <- function(request) {
               )
             )
           ),
-          bslib::nav_panel(
-            title = "Data coverage",
-            icon = bsicons::bs_icon("ui-checks-grid"),
-            bslib::layout_sidebar(
-              fillable = TRUE,
-              sidebar = bslib::sidebar(
-                open = FALSE,
-                shiny::includeMarkdown("descriptions/national_coverage.md")
-              ),
-              bslib::card_body(
-                reactable::reactableOutput("national_data_coverage_table"),
-                fill = TRUE
-              )
-            )
-          ),
+
+          # data coverage table
+          mod_national_coverage_ui("national_coverage"),
 
           # change / issues table
           mod_national_changelog_ui("national_changelog")

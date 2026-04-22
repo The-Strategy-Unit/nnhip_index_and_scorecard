@@ -156,17 +156,19 @@ server <- function(input, output, session) {
   })
 
   ## national data coverage ---------------------------------------------------
-  output$national_data_coverage_table <- reactable::renderReactable({
-    req(df())
-
-    display_national_data_coverage_table(df = df())
-  })
+  mod_national_coverage_server(
+    id = "national_coverage",
+    df = shiny::reactive({
+      shiny::req(df())
+      df()
+    })
+  )
 
   ## national issues log ------------------------------------------------------
   mod_national_changelog_server(
     id = "national_changelog",
     df_issues = shiny::reactive({
-      req(df_issues())
+      shiny::req(df_issues())
       df_issues()
     })
   )
@@ -174,7 +176,7 @@ server <- function(input, output, session) {
   ## place dashboard ----------------------------------------------------------
   # card header text
   output$place_header <- shiny::renderText({
-    req(input$selected_place)
+    shiny::req(input$selected_place)
     input$selected_place
   })
 
@@ -182,19 +184,19 @@ server <- function(input, output, session) {
   mod_place_overview_server(
     id = "place_overview",
     df = shiny::reactive({
-      req(df())
+      shiny::req(df())
       df()
     }),
     place = shiny::reactive({
-      req(input$selected_place)
+      shiny::req(input$selected_place)
       input$selected_place
     }),
     month_current = shiny::reactive({
-      req(filtered_month_current())
+      shiny::req(filtered_month_current())
       filtered_month_current()
     }),
     month_previous = shiny::reactive({
-      req(filtered_month_previous())
+      shiny::req(filtered_month_previous())
       filtered_month_previous()
     })
   )
