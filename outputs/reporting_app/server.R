@@ -165,6 +165,12 @@ server <- function(input, output, session) {
     month_previous = filtered_month_previous
   )
 
+  ## national engagement plot -------------------------------------------------
+  mod_national_engagement_server(
+    id = "national_engagement",
+    df = df
+  )
+
   ## national data coverage ---------------------------------------------------
   mod_national_coverage_server(
     id = "national_coverage",

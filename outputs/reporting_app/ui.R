@@ -46,6 +46,9 @@ ui <- function(request) {
           # overview metrics
           mod_national_overview_ui("national_overview"),
 
+          # engagemet plot
+          mod_national_engagement_ui("national_engagement"),
+
           # data coverage table
           mod_national_coverage_ui("national_coverage"),
 
