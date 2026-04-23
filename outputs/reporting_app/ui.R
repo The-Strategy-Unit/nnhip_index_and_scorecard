@@ -23,8 +23,13 @@ ui <- function(request) {
         # sidebar ----
         sidebar = bslib::sidebar(
           shiny::div(
-            # add some branding
+            # separator line
             shiny::hr(),
+
+            # show when the data was last updated
+            mod_utils_last_updated_ui("national"),
+
+            # SU logo
             shiny::tags$div(
               style = "text-align:center; padding: 10px 0;",
               shiny::tags$img(
@@ -37,23 +42,18 @@ ui <- function(request) {
         # main ----
         bslib::navset_card_tab(
           id = "national_tabs",
-          bslib::nav_panel(
-            title = "Overview",
-            icon = bsicons::bs_icon("table"),
-            bslib::card_body(reactable::reactableOutput("national_table"))
-          ),
-          bslib::nav_panel(
-            title = "Data coverage",
-            icon = bsicons::bs_icon("ui-checks-grid"),
-            bslib::card_body(reactable::reactableOutput(
-              "national_data_coverage_table"
-            ))
-          ),
-          bslib::nav_panel(
-            title = "Change log",
-            icon = bsicons::bs_icon("journal-text"),
-            bslib::card_body(reactable::reactableOutput("changelog_table"))
-          )
+
+          # overview metrics
+          mod_national_overview_ui("national_overview"),
+
+          # engagemet plot
+          mod_national_engagement_ui("national_engagement"),
+
+          # data coverage table
+          mod_national_coverage_ui("national_coverage"),
+
+          # change / issues table
+          mod_national_changelog_ui("national_changelog")
         )
       )
     ),
@@ -97,11 +97,14 @@ ui <- function(request) {
               )
             ),
 
+            # bookmark button
+            shiny::bookmarkButton(label = "Bookmark", width = "100%"),
+
             # divider
             shiny::hr(),
 
-            # bookmark button
-            shiny::bookmarkButton(label = "Bookmark"),
+            # show when the data was last updated
+            mod_utils_last_updated_ui("place"),
 
             # add some branding
             shiny::tags$div(
@@ -121,28 +124,14 @@ ui <- function(request) {
             id = "place_tabs",
             full_screen = TRUE,
 
-            bslib::nav_panel(
-              title = "Dashboard table",
-              icon = bsicons::bs_icon("table"),
-              bslib::card_body(
-                reactable::reactableOutput("place_table"),
-                fill = TRUE
-              )
-            ),
+            # overview table ----
+            mod_place_overview_ui("place_overview"),
 
-            bslib::nav_panel(
-              title = "Funnel plot",
-              icon = bsicons::bs_icon("funnel"),
-              bslib::card_body(
-                plotly::plotlyOutput(
-                  "place_funnel",
-                  height = "100%",
-                  fill = TRUE
-                ),
-                fill = TRUE,
-                height = "100%"
-              )
-            )
+            # funnel plot ----
+            mod_place_funnel_ui("place_funnel"),
+
+            # engagement table ----
+            mod_place_engagement_ui("place_engagement")
           )
         )
       )

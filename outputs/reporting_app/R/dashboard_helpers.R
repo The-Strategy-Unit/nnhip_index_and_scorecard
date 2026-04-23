@@ -1253,6 +1253,196 @@ compute_funnel_limits <- function(df_funnel) {
     )
 }
 
+#' Build the place engagement table data
+#'
+#' @description
+#' This function prepares the dataset required for the place-level engagement table in the dashboard. It produces one row per place, containing:
+#' - `cohort_size` - the most recent estimate of the number of patients in the target cohort (value_type = "patients", demographic_type = "Total")
+#' - monthly engagement counts (metric P1), pivoted wide so that each month appears as a separate column.
+#' - `engagement_rate` - the proportion of the cohort engaged in the most recent month, calculated as:
+#'
+#' engagement_num / patients_latest
+#'
+#' where:
+#' - `patients_latest` is the maximum reported patient count in the latest month for each place (taken across all metrics that report it).
+#' - `engagement_num` is the P1 engagement count for the latest month. If a place has only missing values for P1, the numerator is treated as 0.
+#'
+#' @param df A tibble of metric data.
+#'
+#' @returns A tibble with one row per place and columns:
+#' - `place`,
+#' - `cohort_size`,
+#' - monthly engagement counts
+#' - `engagement_rate`
+#'
+#' @examples
+#' \dontrun{
+#' engagement_table <- get_data_for_engagement_table(df = df)
+#' }
+get_data_for_engagement_table <- function(df) {
+  # get the cohort size (most recent month)
+  part1_cohort <-
+    df |>
+    dplyr::filter(
+      demographic_type == "Total",
+      value_type == "patients",
+      !is.na(value)
+    ) |>
+    dplyr::group_by(place) |>
+    dplyr::filter(month_zoo == max(month_zoo, na.rm = TRUE)) |>
+    dplyr::summarise(cohort_size = max(value, na.rm = TRUE), .groups = "drop")
+
+  # get the number of people engaged each month
+  part2_engagement_month <-
+    df |>
+    dplyr::filter(metric_id == "P1", demographic_type == "Total") |>
+    dplyr::distinct(place, month_zoo, value) |>
+    tidyr::pivot_wider(
+      names_from = month_zoo,
+      values_from = value
+    )
+
+  # get the engagement rate for the latest month
+  # start with the denominator (latest values for the cohort)
+  part3_engagement_rate_denom <-
+    df |>
+    # keep only rows that can contribute to the denominator
+    dplyr::filter(
+      demographic_type == "Total",
+      value_type == "patients",
+      !is.na(value)
+    ) |>
+    # get the latest month per place
+    dplyr::group_by(place) |>
+    dplyr::filter(month_zoo == max(month_zoo, na.rm = TRUE)) |>
+    # take the most reliable denominator (max value)
+    dplyr::summarise(
+      patients_latest = max(value, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  # next is the engaged proportion (latest values per place)
+  part3_engagement_rate_num <-
+    df |>
+    # keep only rows that can contribute to the numerator
+    dplyr::filter(metric_id == "P1", demographic_type == "Total") |>
+    # get the latest month per place
+    dplyr::group_by(place) |>
+    dplyr::filter(month_zoo == max(month_zoo, na.rm = TRUE)) |>
+    dplyr::summarise(
+      engagement_num = max(tidyr::replace_na(value, 0)),
+      .groups = "drop"
+    )
+
+  # join these together and work out the rate
+  part3_engagement_rate <-
+    dplyr::left_join(
+      x = part3_engagement_rate_denom,
+      y = part3_engagement_rate_num,
+      by = dplyr::join_by(x$place == y$place)
+    ) |>
+    dplyr::mutate(engagement_rate = engagement_num / patients_latest) |>
+    dplyr::select(place, engagement_rate)
+
+  # combine the components to the output
+  tibble::tibble(place = expected_places) |>
+    # add in the cohort size
+    dplyr::left_join(
+      y = part1_cohort,
+      by = dplyr::join_by(x$place == y$place)
+    ) |>
+    # add in monthly engagement rate
+    dplyr::left_join(
+      y = part2_engagement_month,
+      by = dplyr::join_by(x$place == y$place)
+    ) |>
+    # add in latest engagement rate
+    dplyr::left_join(
+      y = part3_engagement_rate,
+      by = dplyr::join_by(x$place == y$place)
+    )
+}
+
+#' Render the place-level engagement reactable table
+#'
+#' @description
+#' This function creates an interactive {reactable} table for displaying
+#' place-level engagement data. It is designed for use in the dashboard and
+#' includes several usability enhancements:
+#' - **Sticky header row** - remains visible when scrolling vertically
+#' - **Sticky left column** - the `place` column stays fixed when scrolling
+#'   horizontally across many month columns
+#' - **Automatic numeric formatting** - all numeric columns (including month
+#'   columns and cohort sizes) are right-aligned, formatted as integers and
+#'   constrained to a reasonable maximum width.
+#' - **Percentage formatting** - the `engagement_rate` column is displayed as
+#'   a percentage with one decimal place
+#' - **Horizontal scrolling** - enabled via `fullWidth = FALSE`, ensuring wide
+#'   tables remain readable
+#'
+#' @param df A tibble of metric data.
+#'
+#' @returns A {reactable} widget suitable for display in a Shiny app or R
+#' Markdown dashboard.
+display_engagement_table <- function(df) {
+  # get the engagement data
+  df_engagement <- get_data_for_engagement_table(df = df)
+
+  df_engagement |>
+    reactable::reactable(
+      pagination = FALSE,
+      highlight = TRUE,
+      resizable = TRUE,
+      wrap = FALSE,
+      fullWidth = FALSE, # enables horizontal scrolling
+
+      # default column behaviour
+      defaultColDef = reactable::colDef(
+        align = "right",
+        format = reactable::colFormat(digits = 0, separators = TRUE),
+        minWidth = 90,
+        maxWidth = 100
+      ),
+
+      # column formating
+      columns = list(
+        place = reactable::colDef(
+          sticky = "left",
+          header = "Place",
+          align = "left",
+          # width = 250,
+          minWidth = 180,
+          maxWidth = 1000
+        ),
+
+        cohort_size = reactable::colDef(
+          header = "Cohort size",
+          minWidth = 110,
+          maxWidth = 120
+        ),
+
+        engagement_rate = reactable::colDef(
+          header = "Engagement rate",
+          format = reactable::colFormat(percent = TRUE, digits = 1),
+          minWidth = 150,
+          maxWidth = 160,
+          align = "right"
+        )
+      ),
+      theme = reactable::reactableTheme(
+        style = list(
+          headerStyle = list(
+            position = "sticky",
+            top = 0,
+            zIndex = 3,
+            background = "#fff"
+          ),
+          fontFamily = "Roboto, Arial, sans-serif"
+        )
+      )
+    )
+}
+
 
 # National views --------------------------------------------------------------
 
@@ -1784,4 +1974,246 @@ display_national_data_coverage_table <- function(df) {
       )
     )
   )
+}
+
+#' Prepare national-level engagement data
+#'
+#' @description
+#' This function takes a long-format dataset of cohort and engagement metrics
+#' and produces a monthly summary suitable for plotting national-level
+#' engagement trends. It returns one row per month with:
+#' - total cohort size
+#' - number of contributing places
+#' - total engaged population
+#' - number of places with active engagement
+#' - engagement rates
+#' - formatted hover text for visualisation
+#'
+#' @param df A tibble or data frame containing metric data.
+#'
+#' @returns A data frame with one row per month and derived engagement metrics
+#'
+#' @examples
+#' \dontrun{
+#' get_data_for_national_engagement(df = df)
+#' }
+get_data_for_national_engagement <- function(df) {
+  # get details for the total number of people in the cohort each month
+  part1_cohort <-
+    df |>
+    dplyr::filter(
+      demographic_type == "Total",
+      value_type == "patients",
+      !is.na(value) # need to do this in case a place left all blank
+    ) |>
+    # summarise
+    dplyr::summarise(
+      .by = month_zoo,
+      cohort_size = sum(value, na.rm = TRUE),
+      n_places = dplyr::n_distinct(place, na.rm = TRUE)
+    )
+
+  # get details for the total number of people engaged each month
+  part2_engaged <-
+    df |>
+    dplyr::filter(
+      demographic_type == "Total",
+      metric_id == "P1"
+    ) |>
+    # summarise
+    dplyr::summarise(
+      .by = month_zoo,
+      engaged_pop = sum(value, na.rm = TRUE),
+      n_places_engaged = sum(flag_actively_engaged, na.rm = TRUE)
+    )
+
+  # combine the two data and prepare for plotting
+  df_return <-
+    dplyr::left_join(
+      x = part1_cohort,
+      y = part2_engaged,
+      by = dplyr::join_by(x$month_zoo == y$month_zoo)
+    ) |>
+    dplyr::mutate(
+      month_zoo = month_zoo |> zoo::as.yearmon(),
+      month_dt = month_zoo |> zoo::as.Date(frac = 0),
+
+      # derived metrics
+      engagement_rate = engaged_pop / cohort_size,
+      place_engagement_rate = n_places_engaged / n_places,
+
+      # hover text for {plotly}
+      hover_text = glue::glue(
+        "<b>{month_zoo}</b>
+      Target cohort: <b>{prettyunits::pretty_num(cohort_size)}</b>
+      Engaged population: <b>{prettyunits::pretty_num(engaged_pop)}</b>
+      Engagement rate: <b>{scales::percent(engagement_rate)}</b>
+      Places engaging: <b>{n_places_engaged}</b> out of <b>{n_places}</b> (<b>{scales::percent(place_engagement_rate, accuracy = 1)}</b>)
+      "
+      )
+    )
+
+  return(df_return)
+}
+
+#' Display national engagement plot with procedural annotations
+#'
+#' @description
+#' This function takes a monthly engagement dataset (as produced by `get_data_for_national_engagement()`) and generates a {plotly} visual showing cohort size, engaged population and a set of automatically detected milestone annotations.
+#'
+#' @param df A data frame containing:
+#' - month_dt (Date)
+#' - cohort_size
+#' - engaged_pop
+#' - engagement_rate
+#' - place_engagement_rate
+#' - hover_text
+#'
+#' @returns A {plotly} object
+display_national_engagement_plot <- function(df) {
+  # define a function to add annotations to a list
+  add_annotation_to_list <- function(df, idx = NA, str_desc = "") {
+    # if rule is not met then ignore
+    if (is.na(idx)) {
+      return(ann_list)
+    }
+
+    # construct an annotation
+    new_x <- df$month_dt[idx]
+    new_y <- df$engaged_pop[idx]
+
+    # count how many existing annotations already use this point
+    same_point_count <- sum(vapply(
+      ann_list,
+      function(a) a$x == new_x && a$y == new_y,
+      logical(1)
+    ))
+
+    # offset each additional annotation by 20px downward
+    offset <- same_point_count * 20
+
+    # construct the annotation
+    annotation <- list(
+      x = df$month_dt[idx],
+      y = df$engaged_pop[idx],
+      text = str_desc,
+      showarrow = TRUE,
+      arrowhead = 2,
+      xanchor = "right",
+      ax = -20,
+      ay = -40 - offset # progressively shift down
+    )
+
+    return(append(ann_list, list(annotation)))
+  }
+
+  # start the annotations list
+  ann_list <- list()
+
+  # engagement rate thresholds
+  thresholds <- c(
+    "Engagement > 10%" = 0.10,
+    "Engagement > 20%" = 0.20,
+    "Engagement > 50%" = 0.50,
+    "Engagement > 80%" = 0.80
+  )
+
+  for (label in names(thresholds)) {
+    idx <- which(df$engagement_rate > thresholds[[label]])[1]
+    ann_list <- add_annotation_to_list(df = df, idx = idx, str_desc = label)
+  }
+
+  ## rule: engagement rate slows
+  rate_diff <- diff(df$engagement_rate)
+  idx <- which(rate_diff < 0)[1] + 1
+  ann_list <- add_annotation_to_list(
+    df = df,
+    idx = idx,
+    str_desc = "Engagement rate growth slows"
+  )
+
+  ## rule: largest month-on-month increase
+  # mom <- diff(df$engaged_pop)
+  # idx <- which.max(mom) + 1
+  # ann_list <- add_annotation_to_list(
+  #   df = df,
+  #   idx = idx,
+  #   str_desc = "Largest month-on-month increase"
+  # )
+
+  ## rule: engagement rate doubles from baseline
+  base <- df$engaged_pop[1] / df$cohort_size[1]
+  rate <- df$engaged_pop / df$cohort_size
+  idx <- which(rate >= 2 * base)[1]
+  ann_list <- add_annotation_to_list(
+    df = df,
+    idx = idx,
+    str_desc = "Engagement rate 2x baseline"
+  )
+
+  # engaged population thresholds
+  pop_thresholds <- c(
+    "Engaged population > 100k" = 1e5L,
+    "Engaged population > 200k" = 2e5L
+  )
+
+  for (label in names(pop_thresholds)) {
+    idx <- which(df$engaged_pop > pop_thresholds[[label]])[1]
+    ann_list <- add_annotation_to_list(df = df, idx = idx, str_desc = label)
+  }
+
+  # place engagement thresholds
+  place_thresholds <- c(
+    "Engagement > 50% of places" = 0.50,
+    "Engagement > 80% of places" = 0.80
+  )
+
+  for (label in names(place_thresholds)) {
+    idx <- which(df$place_engagement_rate > place_thresholds[[label]])[1]
+    ann_list <- add_annotation_to_list(df = df, idx = idx, str_desc = label)
+  }
+
+  # construct the plot
+  plotly::plot_ly(
+    data = df,
+    x = ~month_dt,
+    hoverinfo = "text",
+    text = ~hover_text
+  ) |>
+    plotly::add_trace(
+      y = ~cohort_size,
+      type = "scatter",
+      mode = "lines",
+      name = "Cohort",
+      line = list(shape = "hv", color = "#5881c1")
+    ) |>
+    plotly::add_trace(
+      y = ~engaged_pop,
+      type = "scatter",
+      mode = "markers+lines+fill",
+      name = "Engaged",
+      line = list(shape = "hv", color = "#f9bf07"),
+      marker = list(
+        color = "#f9bf07",
+        size = 12,
+        line = list(color = "#fff", width = 2)
+      ),
+      fillcolor = adjustcolor("#f9bf07", alpha.f = 0.3),
+      fill = "tozeroy"
+    ) |>
+    plotly::layout(
+      # ensure x-axis displays one tick per month
+      xaxis = list(
+        tickformat = "%b %Y",
+        dtick = "M1",
+        title = "Submission period"
+      ),
+      yaxis = list(title = ""),
+      # add the annotations to the plot
+      annotations = ann_list,
+      # general config
+      showlegend = FALSE,
+      font = list(family = "Roboto, Arial, sans-serif", size = 16)
+    ) |>
+    plotly::config(displaylogo = FALSE)
 }

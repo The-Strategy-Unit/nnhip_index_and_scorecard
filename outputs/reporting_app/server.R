@@ -8,8 +8,13 @@ server <- function(input, output, session) {
   )
 
   # read the pin version for use as a cache key
-  df_version <- shiny::reactive(
+  pin_version <- shiny::reactive(
     pins::pin_meta(board = board, name = pin_name)$version
+  )
+
+  # read the pin created date (for the version)
+  pin_time <- shiny::reactive(
+    pins::pin_meta(board = board, name = pin_name)$created
   )
 
   # read the pin for issues / changelog
@@ -42,8 +47,6 @@ server <- function(input, output, session) {
 
   metrics <- shiny::reactive({
     req(df())
-
-    # df()$metric |> unique() |> factor()
     df() |>
       dplyr::filter_out(metric_block == 15) |>
       dplyr::distinct(metric) |>
@@ -113,6 +116,16 @@ server <- function(input, output, session) {
   })
 
   # update ui inputs ----------------------------------------------------------
+  # update the data refresh time
+  mod_utils_last_updated_server(
+    id = "national",
+    time = pin_time
+  )
+  mod_utils_last_updated_server(
+    id = "place",
+    time = pin_time
+  )
+
   # update the available places
   shiny::observe({
     shiny::updateSelectizeInput(
@@ -145,87 +158,77 @@ server <- function(input, output, session) {
 
   # outputs -------------------------------------------------------------------
   ## national dashboard -------------------------------------------------------
-  output$national_table <- reactable::renderReactable({
-    req(df(), filtered_month_current(), filtered_month_previous())
+  mod_national_overview_server(
+    id = "national_overview",
+    df = df,
+    month_current = filtered_month_current,
+    month_previous = filtered_month_previous
+  )
 
-    display_dashboard_national(
-      df = df(),
-      month_latest = filtered_month_current(),
-      month_prev = filtered_month_previous()
-    )
-  })
+  ## national engagement plot -------------------------------------------------
+  mod_national_engagement_server(
+    id = "national_engagement",
+    df = df
+  )
 
   ## national data coverage ---------------------------------------------------
-  output$national_data_coverage_table <- reactable::renderReactable({
-    req(df())
-
-    display_national_data_coverage_table(df = df())
-  })
+  mod_national_coverage_server(
+    id = "national_coverage",
+    df = df
+  )
 
   ## national issues log ------------------------------------------------------
-  output$changelog_table <- reactable::renderReactable({
-    req(df_issues())
-
-    display_issueslog(df_issues = df_issues())
-  })
+  mod_national_changelog_server(
+    id = "national_changelog",
+    df_issues = df_issues
+  )
 
   ## place dashboard ----------------------------------------------------------
+  # card header text
   output$place_header <- shiny::renderText({
-    req(input$selected_place)
+    shiny::req(input$selected_place)
     input$selected_place
   })
 
-  output$place_table <- reactable::renderReactable({
-    req(
-      df(),
-      input$selected_place,
-      filtered_month_current(),
-      filtered_month_previous()
-    )
-    display_dashboard(
-      df = df(),
-      place_selected = input$selected_place,
-      month_latest = filtered_month_current(),
-      month_prev = filtered_month_previous()
-    )
-  })
+  # module server call
+  mod_place_overview_server(
+    id = "place_overview",
+    df = df,
+    place = shiny::reactive({
+      shiny::req(input$selected_place)
+      input$selected_place
+    }),
+    month_current = filtered_month_current,
+    month_previous = filtered_month_previous
+  )
 
   ## place funnel -------------------------------------------------------------
-  # cache funnel data for month:metric for improved UX ---
-  df_funnel <- shiny::reactive({
-    req(df_selected_month(), input$selected_month, input$selected_metric)
-
-    get_data_for_funnel_plot(
-      df = df_selected_month(),
-      month_selected = input$selected_month |> zoo::as.yearmon(),
-      metric_selected = input$selected_metric
-    )
-  }) |>
-    shiny::bindCache(df_version(), input$selected_month, input$selected_metric)
-
-  # cache limits data for month:metric for improved UX ---
-  df_limits <- shiny::reactive({
-    req(df_funnel())
-
-    compute_funnel_limits(df_funnel = df_funnel())
-  }) |>
-    shiny::bindCache(df_version(), input$selected_month, input$selected_metric)
-
-  # render the funnel ---
-  output$place_funnel <- plotly::renderPlotly({
-    req(
-      df_selected_month(),
-      df_funnel(),
-      input$selected_place,
+  # module server call
+  mod_place_funnel_server(
+    id = "place_funnel",
+    df = df_selected_month,
+    place = shiny::reactive({
+      req(input$selected_place)
+      input$selected_place
+    }),
+    metric = shiny::reactive({
+      req(input$selected_metric)
       input$selected_metric
-    )
+    }),
+    month = shiny::reactive({
+      req(input$selected_month)
+      input$selected_month |> zoo::as.yearmon()
+    }),
+    df_version = shiny::reactive({
+      req(pin_version)
+      pin_version
+    })
+  )
 
-    get_funnel_plot(
-      df_funnel = df_funnel(),
-      df_limits = df_limits(),
-      place_selected = input$selected_place,
-      metric_selected = input$selected_metric,
-      month_selected = input$selected_month |> zoo::as.yearmon()
-    )
-  })
+  ## engagement table ---------------------------------------------------------
+  # module server call
+  mod_place_engagement_server(
+    id = "place_engagement",
+    df = df
+  )
 }
