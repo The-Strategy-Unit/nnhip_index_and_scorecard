@@ -17,25 +17,25 @@ This funnel plot shows how each place's **observed rate per 1,000 population** c
   - **Outer funnel**: 99% limits (Poisson-based)
 
     These limits naturally widen for smaller populations, where greater variability is expected.
-  
-  - **Highlighted selected Place**
-    The Place chosen in the dashboard is shown with a yellow marker, helping you to see how it sits within the wider pattern.
 
-  - **Colour-coded categories**
-    Points are grouped according to whether their observed rate falls:
+- **Highlighted selected Place**
+  The Place chosen in the dashboard is shown with a yellow marker, helping you to see how it sits within the wider pattern.
 
-    - within the 95% limits
+- **Colour-coded categories**
+  Points are grouped according to whether their observed rate falls:
 
-    - between the 95% and 99% limits
+  - within the 95% limits
 
-    - beyond the 99% limits
+  - between the 95% and 99% limits
 
-    - or represents a Place not currently engaged with their target cohort
+  - beyond the 99% limits
 
-      These categories are descriptive rather than evaluative - they simply indicate how each point relates to the statistical limits.
-  
-  - **Interactive hover text**
-    Hovering over a point shows the underlying counts, population size, rater per 1000 and engagement status.
+  - or represents a Place not currently engaged with their target cohort
+
+  These categories are descriptive rather than evaluative - they simply indicate how each point relates to the statistical limits.
+
+- **Interactive hover text**
+  Hovering over a point shows the underlying counts, population size, rater per 1000 and engagement status.
 
 ### How to interpret the plot
 
