@@ -19,6 +19,9 @@ validation <- validate_monthly_submissions()
 validation$issues |> View()
 validation$data |> View()
 
+# see how the validated data look in the app
+launch_app_with_test_data()
+
 # --- Process data ------------------------------------------------------------
 
 # when ready to update the data, run this:
