@@ -1,21 +1,32 @@
 # server ----------------------------------------------------------------------
 server <- function(input, output, session) {
-  # read pin reactively every hour --------------------------------------------
-  df_raw <- pins::pin_reactive_read(
-    board = board,
-    name = pin_name,
-    interval = 60 * 60 * 1000 # check hourly
-  )
+  # decide whether to use local test data or not
+  use_test_data <- getOption(x = "use_test_data", default = FALSE)
 
-  # read the pin version for use as a cache key
-  pin_version <- shiny::reactive(
-    pins::pin_meta(board = board, name = pin_name)$version
-  )
+  # conditionally load the pin or from `validation$data` if testing locally
+  if (use_test_data) {
+    df_raw <- get0("validation", envir = .GlobalEnv, ifnotfound = NULL)$data |>
+      shiny::reactive()
+    pin_version <- 0 |> shiny::reactive()
+    pin_time <- Sys.time() |> shiny::reactive()
+  } else {
+    # read pin reactively every hour --------------------------------------------
+    df_raw <- pins::pin_reactive_read(
+      board = board,
+      name = pin_name,
+      interval = 60 * 60 * 1000 # check hourly
+    )
 
-  # read the pin created date (for the version)
-  pin_time <- shiny::reactive(
-    pins::pin_meta(board = board, name = pin_name)$created
-  )
+    # read the pin version for use as a cache key
+    pin_version <- shiny::reactive(
+      pins::pin_meta(board = board, name = pin_name)$version
+    )
+
+    # read the pin created date (for the version)
+    pin_time <- shiny::reactive(
+      pins::pin_meta(board = board, name = pin_name)$created
+    )
+  }
 
   # read the pin for issues / changelog
   df_issues <- pins::pin_reactive_read(

@@ -1342,3 +1342,34 @@ check_metric_alignment <- function(df) {
       )
   }
 }
+
+#' Launch the reporting app using test data
+#'
+#' @description
+#' Sets the global option `use_test_data = TRUE` and launches the Shiny
+#' reporting application. This is intended as a tool for the validation of
+#' ingested data to ensure the ingested data does not break any app
+#' functionality.
+#'
+#' @details
+#' Calling this function modifies the current R session by setting
+#' `options(use_test_data = TRUE)`. The shiny app recognises this option to
+#' load the dataset from `validation$data` to see how the validated data
+#' appears in the app.
+#'
+#' @returns This function is called for its side effects and returns the
+#' result of `shiny::runApp()`
+#'
+#' @examples
+#' \dontrun{
+#' launch_app_with_test_data()
+#' }
+launch_app_with_test_data <- function() {
+  options(use_test_data = TRUE)
+  shiny::runApp(
+    appDir = here::here("outputs", "reporting_app"),
+    launch.browser = function(url) {
+      browseURL(url)
+    }
+  )
+}
