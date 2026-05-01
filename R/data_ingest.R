@@ -866,6 +866,8 @@ collate_submissions_for_month <- function(ms_teams_folder = NULL) {
   # connect to the Teams / SharePoint site
   if (is.null(ms_teams_folder)) {
     folder <- get_ms_teams_folder()
+  } else {
+    folder <- ms_teams_folder
   }
 
   # list folders
