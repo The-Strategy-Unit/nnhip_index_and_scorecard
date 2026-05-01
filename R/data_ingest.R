@@ -227,7 +227,9 @@ get_issues_log <- function(
   tmp <- tempfile()
   chnglg$download(dest = tmp, overwrite = TRUE)
   df <- readxl::read_excel(path = tmp, sheet = sheetname) |>
-    janitor::clean_names()
+    janitor::clean_names() |>
+    # put the newest entries first
+    dplyr::arrange(dplyr::desc(date))
 
   # return the df
   return(df)
@@ -866,6 +868,8 @@ collate_submissions_for_month <- function(ms_teams_folder = NULL) {
   # connect to the Teams / SharePoint site
   if (is.null(ms_teams_folder)) {
     folder <- get_ms_teams_folder()
+  } else {
+    folder <- ms_teams_folder
   }
 
   # list folders

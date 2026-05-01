@@ -29,7 +29,9 @@ mod_national_changelog_server <- function(id, df_issues) {
     output$changelog_table <- reactable::renderReactable({
       req(df_issues())
 
-      display_issueslog(df_issues = df_issues())
+      display_issueslog(
+        df_issues = df_issues() |> dplyr::arrange(dplyr::desc(date))
+      )
     })
   })
 }
