@@ -227,7 +227,9 @@ get_issues_log <- function(
   tmp <- tempfile()
   chnglg$download(dest = tmp, overwrite = TRUE)
   df <- readxl::read_excel(path = tmp, sheet = sheetname) |>
-    janitor::clean_names()
+    janitor::clean_names() |>
+    # put the newest entries first
+    dplyr::arrange(dplyr::desc(date))
 
   # return the df
   return(df)
