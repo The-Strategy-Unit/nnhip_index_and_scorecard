@@ -2006,6 +2006,11 @@ get_data_for_national_engagement <- function(df) {
       value_type == "patients",
       !is.na(value) # need to do this in case a place left all blank
     ) |>
+    # summarise by Place and month
+    dplyr::summarise(
+      .by = c(place, month_zoo),
+      value = median(value, na.rm = TRUE) # taking the median to handle small number of cases where cohort size varies across metrics
+    ) |>
     # summarise
     dplyr::summarise(
       .by = month_zoo,
