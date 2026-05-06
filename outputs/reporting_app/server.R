@@ -14,18 +14,28 @@ server <- function(input, output, session) {
     df_raw <- pins::pin_reactive_read(
       board = board,
       name = pin_name,
-      interval = 60 * 60 * 1000 # check hourly
+      interval = 1e3 * 60 * 60 # check hourly
     )
 
     # read the pin version for use as a cache key
-    pin_version <- shiny::reactive(
+    pin_version <- shiny::reactive({
+      # check for updates to the version each hour
+      shiny::invalidateLater(
+        millis = 1e3 * 60 * 60 + 1,
+        session = shiny::getDefaultReactiveDomain()
+      )
       pins::pin_meta(board = board, name = pin_name)$version
-    )
+    })
 
-    # read the pin created date (for the version)
-    pin_time <- shiny::reactive(
+    # read the pin created date for data age
+    pin_time <- shiny::reactive({
+      # check for updates to the time each hour
+      shiny::invalidateLater(
+        millis = 1e3 * 60 * 60 + 1,
+        session = shiny::getDefaultReactiveDomain()
+      )
       pins::pin_meta(board = board, name = pin_name)$created
-    )
+    })
   }
 
   # read the pin for issues / changelog
