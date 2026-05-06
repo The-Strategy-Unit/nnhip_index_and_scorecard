@@ -789,8 +789,7 @@ display_dashboard <- function(df, place_selected, month_latest, month_prev) {
             minWidth = 150,
             maxWidth = 1000,
             cell = reactablefmtr::react_sparkline(
-              # data = _,
-              data = ~trendline,
+              data = df_dashboard,
               show_area = TRUE,
               line_color = "#5881c1",
               highlight_points = reactablefmtr::highlight_points(
