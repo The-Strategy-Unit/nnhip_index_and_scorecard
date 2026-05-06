@@ -23,6 +23,23 @@ ui <- function(request) {
         # sidebar ----
         sidebar = bslib::sidebar(
           shiny::div(
+            # select a demographic (conditional)
+            shiny::conditionalPanel(
+              condition = "input.national_tabs == 'Demographics'",
+              shiny::selectizeInput(
+                inputId = "selected_demographic",
+                label = "Demographic:",
+                choices = NULL, # will update this reactively in server.R
+                multiple = FALSE
+              )
+            ),
+
+            # bookmark button (conditional)
+            shiny::conditionalPanel(
+              condition = "input.national_tabs == 'Demographics'",
+              shiny::bookmarkButton(label = "Bookmark", width = "100%"),
+            ),
+
             # separator line
             shiny::hr(),
 
@@ -46,8 +63,11 @@ ui <- function(request) {
           # overview metrics
           mod_national_overview_ui("national_overview"),
 
-          # engagemet plot
+          # engagement plot
           mod_national_engagement_ui("national_engagement"),
+
+          # demographics plot
+          mod_national_demographics_ui("national_demographics"),
 
           # data coverage table
           mod_national_coverage_ui("national_coverage"),
