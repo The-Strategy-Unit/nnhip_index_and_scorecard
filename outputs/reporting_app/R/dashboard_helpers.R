@@ -1383,10 +1383,11 @@ get_data_for_engagement_table <- function(df) {
 #'
 #' @returns A {reactable} widget suitable for display in a Shiny app or R
 #' Markdown dashboard.
-display_engagement_table <- function(df) {
+display_engagement_table <- function(df, place_highlight = NULL) {
   # get the engagement data
   df_engagement <- get_data_for_engagement_table(df = df)
 
+  # produce the table
   df_engagement |>
     reactable::reactable(
       pagination = FALSE,
@@ -1394,6 +1395,16 @@ display_engagement_table <- function(df) {
       resizable = TRUE,
       wrap = FALSE,
       fullWidth = FALSE, # enables horizontal scrolling
+
+      # highlight the row with the selected Place
+      rowStyle = function(index) {
+        row <- df_engagement[index, ]
+        if (!is.null(place_highlight) && row$place == place_highlight) {
+          list(background = "#fff3cd")
+        } else {
+          list()
+        }
+      },
 
       # default column behaviour
       defaultColDef = reactable::colDef(
