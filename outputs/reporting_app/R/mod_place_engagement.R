@@ -24,12 +24,12 @@ mod_place_engagement_ui <- function(id) {
 }
 
 # server ----
-mod_place_engagement_server <- function(id, df) {
+mod_place_engagement_server <- function(id, df, place) {
   shiny::moduleServer(id, function(input, output, session) {
     # update the table
     output$engagement_table <- reactable::renderReactable({
-      req(df())
-      display_engagement_table(df = df())
+      req(df(), place())
+      display_engagement_table(df = df(), place_highlight = place())
     })
   })
 }

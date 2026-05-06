@@ -278,6 +278,10 @@ server <- function(input, output, session) {
   # module server call
   mod_place_engagement_server(
     id = "place_engagement",
-    df = df
+    df = df,
+    place = shiny::reactive({
+      req(input$selected_place)
+      input$selected_place
+    })
   )
 }
