@@ -167,6 +167,20 @@ server <- function(input, output, session) {
     )
   })
 
+  # update the available demographic splits
+  shiny::observe({
+    shiny::updateSelectInput(
+      session = session,
+      inputId = "selected_demographic",
+      choices = df() |>
+        dplyr::distinct(demographic_type) |>
+        dplyr::filter_out(demographic_type == "Total") |>
+        dplyr::pull(demographic_type) |>
+        unique() |>
+        as.character()
+    )
+  })
+
   # outputs -------------------------------------------------------------------
   ## national dashboard -------------------------------------------------------
   mod_national_overview_server(
@@ -180,6 +194,20 @@ server <- function(input, output, session) {
   mod_national_engagement_server(
     id = "national_engagement",
     df = df
+  )
+
+  ## national demographic splits ----------------------------------------------
+  mod_national_demographics_server(
+    id = "national_demographics",
+    df = df,
+    selected_demographic = shiny::reactive({
+      shiny::req(input$selected_demographic)
+      input$selected_demographic
+    }),
+    df_version = shiny::reactive({
+      shiny::req(pin_version)
+      pin_version
+    })
   )
 
   ## national data coverage ---------------------------------------------------
