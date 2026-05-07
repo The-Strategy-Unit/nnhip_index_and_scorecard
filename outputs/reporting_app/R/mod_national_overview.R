@@ -7,8 +7,15 @@ mod_national_overview_ui <- function(id) {
 
   # define the ui
   bslib::nav_panel(
-    title = "Overview",
-    icon = bsicons::bs_icon("table"),
+    value = "overview_national",
+    title = shiny::span(
+      bsicons::bs_icon("table"),
+      "Overview"
+    ) |>
+      bslib::tooltip(
+        "National-level snapshot of key monthly metrics, showing short- and long-term changes and variation across Places.",
+        options = list(trigger = "hover")
+      ),
     bslib::layout_sidebar(
       fillable = TRUE,
       sidebar = bslib::sidebar(

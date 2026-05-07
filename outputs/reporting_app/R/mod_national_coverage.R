@@ -7,8 +7,15 @@ mod_national_coverage_ui <- function(id) {
 
   # define the UI
   bslib::nav_panel(
-    title = "Data coverage",
-    icon = bsicons::bs_icon("ui-checks-grid"),
+    value = "data_coverage",
+    title = shiny::span(
+      bsicons::bs_icon("ui-checks-grid"),
+      "Data coverage"
+    ) |>
+      bslib::tooltip(
+        "At-a-glance view of which Places have processed data each month, showing coverage and gaps.",
+        options = list(trigger = "hover")
+      ),
     bslib::layout_sidebar(
       fillable = TRUE,
       sidebar = bslib::sidebar(

@@ -1,6 +1,5 @@
 ui <- function(request) {
   bslib::page_navbar(
-    # title = "NNHIP scorecard dashboard",
     title = shiny::tags$img(
       src = "logos/nnhip_logo.png",
       style = "height:60px;",
@@ -17,12 +16,36 @@ ui <- function(request) {
 
     # national section --------------------------------------------------------
     bslib::nav_panel(
-      title = "National view",
-      icon = bsicons::bs_icon("map"),
+      value = "national_view",
+      title = shiny::span(
+        bsicons::bs_icon("map"),
+        "National view"
+      ) |>
+        bslib::tooltip(
+          "National-level views of NNHIP data, showing key trends, patterns and progress across all Places.",
+          options = list(trigger = "hover")
+        ),
       bslib::page_sidebar(
         # sidebar ----
         sidebar = bslib::sidebar(
           shiny::div(
+            # select a demographic (conditional)
+            shiny::conditionalPanel(
+              condition = "input.national_tabs == 'demographics'",
+              shiny::selectizeInput(
+                inputId = "selected_demographic",
+                label = "Demographic:",
+                choices = NULL, # will update this reactively in server.R
+                multiple = FALSE
+              )
+            ),
+
+            # bookmark button (conditional)
+            shiny::conditionalPanel(
+              condition = "input.national_tabs == 'demographics'",
+              shiny::bookmarkButton(label = "Bookmark", width = "100%"),
+            ),
+
             # separator line
             shiny::hr(),
 
@@ -46,8 +69,11 @@ ui <- function(request) {
           # overview metrics
           mod_national_overview_ui("national_overview"),
 
-          # engagemet plot
+          # engagement plot
           mod_national_engagement_ui("national_engagement"),
+
+          # demographics plot
+          mod_national_demographics_ui("national_demographics"),
 
           # data coverage table
           mod_national_coverage_ui("national_coverage"),
@@ -60,8 +86,15 @@ ui <- function(request) {
 
     # place section -----------------------------------------------------------
     bslib::nav_panel(
-      title = "Place view",
-      icon = bsicons::bs_icon("pin-map"),
+      value = "place_view",
+      title = shiny::span(
+        bsicons::bs_icon("pin-map"),
+        "Place view"
+      ) |>
+        bslib::tooltip(
+          "Place-level views of NNHIP data, showing local patterns, progress and variation across individual Places.",
+          options = list(trigger = "hover")
+        ),
       bslib::page_sidebar(
         # sidebar ----
         sidebar = bslib::sidebar(
@@ -77,7 +110,7 @@ ui <- function(request) {
 
             # select a metric (conditional)
             shiny::conditionalPanel(
-              condition = "input.place_tabs == 'Funnel plot'",
+              condition = "input.place_tabs == 'funnel_plot'",
               shiny::selectizeInput(
                 inputId = "selected_metric",
                 label = "Metric:",
@@ -88,7 +121,7 @@ ui <- function(request) {
 
             # select a month (conditional)
             shiny::conditionalPanel(
-              condition = "input.place_tabs == 'Funnel plot'",
+              condition = "input.place_tabs == 'funnel_plot'",
               shiny::selectizeInput(
                 inputId = "selected_month",
                 label = "Month:",

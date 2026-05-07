@@ -7,8 +7,15 @@ mod_place_overview_ui <- function(id) {
 
   # define the UI
   bslib::nav_panel(
-    title = "Overview",
-    icon = bsicons::bs_icon("table"),
+    value = "overview_place",
+    title = shiny::span(
+      bsicons::bs_icon("table"),
+      "Overview"
+    ) |>
+      bslib::tooltip(
+        "Compact summary of key monthly metrics for the selected Place, including recent values, month-to-month change, longer-term averages and a mini trendline.",
+        options = list(trigger = "hover")
+      ),
     bslib::layout_sidebar(
       fillable = TRUE,
       sidebar = bslib::sidebar(

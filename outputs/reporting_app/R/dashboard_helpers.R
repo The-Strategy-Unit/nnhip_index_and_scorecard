@@ -789,8 +789,7 @@ display_dashboard <- function(df, place_selected, month_latest, month_prev) {
             minWidth = 150,
             maxWidth = 1000,
             cell = reactablefmtr::react_sparkline(
-              # data = _,
-              data = ~trendline,
+              data = df_dashboard,
               show_area = TRUE,
               line_color = "#5881c1",
               highlight_points = reactablefmtr::highlight_points(
@@ -1384,10 +1383,11 @@ get_data_for_engagement_table <- function(df) {
 #'
 #' @returns A {reactable} widget suitable for display in a Shiny app or R
 #' Markdown dashboard.
-display_engagement_table <- function(df) {
+display_engagement_table <- function(df, place_highlight = NULL) {
   # get the engagement data
   df_engagement <- get_data_for_engagement_table(df = df)
 
+  # produce the table
   df_engagement |>
     reactable::reactable(
       pagination = FALSE,
@@ -1395,6 +1395,16 @@ display_engagement_table <- function(df) {
       resizable = TRUE,
       wrap = FALSE,
       fullWidth = FALSE, # enables horizontal scrolling
+
+      # highlight the row with the selected Place
+      rowStyle = function(index) {
+        row <- df_engagement[index, ]
+        if (!is.null(place_highlight) && row$place == place_highlight) {
+          list(background = "#fff3cd")
+        } else {
+          list()
+        }
+      },
 
       # default column behaviour
       defaultColDef = reactable::colDef(
@@ -2006,6 +2016,11 @@ get_data_for_national_engagement <- function(df) {
       value_type == "patients",
       !is.na(value) # need to do this in case a place left all blank
     ) |>
+    # summarise by Place and month
+    dplyr::summarise(
+      .by = c(place, month_zoo),
+      value = median(value, na.rm = TRUE) # taking the median to handle small number of cases where cohort size varies across metrics
+    ) |>
     # summarise
     dplyr::summarise(
       .by = month_zoo,
@@ -2216,4 +2231,170 @@ display_national_engagement_plot <- function(df) {
       font = list(family = "Roboto, Arial, sans-serif", size = 16)
     ) |>
     plotly::config(displaylogo = FALSE)
+}
+
+
+#' Prepare demographic cohort data for plotting
+#'
+#' @description
+#' This function take raw metric-level data and produces a summarised dataset
+#' suitable for demographic split visualisations. It filters to patient counts,
+#' aggregates values at the Place level, then aggregates again to produce
+#' national-level cohort sizes for each demographic group and month.
+#'
+#' The returned data frame includes cohort sizes, proportions, suppression
+#' indicators and pre-built text fields for {plotly} hover labels and bar
+#' labels.
+#'
+#' @param df A data frame containing raw metric data.
+#'
+#' @returns A data frame containing one row per demographic group per month,
+#' with the following key columns:
+#' - `month_zoo` Reporting month
+#' - `month_f` A factor version of the month for animation frames
+#' - `demographic_type` Demographic category
+#' - `demographic_value` Demographic subgroup
+#' - `cohort_size` Total number of patients in the cohort
+#' - `cohort_prop` Proportion of the cohort represented by the subgroup
+#' - `n_places` Number of Places included
+#' - `n_suppressed` Number of Places with suppressed values
+#' - `n_place_contrib` Number of places contributing non-suppressed values
+#' - `hover_text` Formatted HTML text for {plotly} tooltips
+#' - `bar_text` Formatted text for bar labels
+#'
+#' @examples
+#' \dontrun {
+#' df_summary <- get_data_for_demographic_split(df = df)
+#' }
+get_data_for_demographic_split <- function(df) {
+  df_return <-
+    df |>
+    dplyr::filter(
+      value_type == "patients",
+      metric_id != "P1"
+    ) |>
+    # summarise by Place
+    dplyr::summarise(
+      .by = c(
+        place,
+        month_zoo,
+        demographic_type,
+        demographic_value,
+        value_suppressed
+      ),
+      value = median(value, na.rm = TRUE),
+      any_suppressed = any(value_suppressed)
+    ) |>
+    # summarise for the national cohort
+    dplyr::summarise(
+      .by = c(month_zoo, demographic_type, demographic_value),
+      cohort_size = sum(value, na.rm = TRUE),
+      n_places = dplyr::n_distinct(place, na.rm = TRUE),
+      n_suppressed = sum(any_suppressed, na.rm = TRUE),
+      n_place_contrib = n_places - n_suppressed
+    ) |>
+    dplyr::arrange(month_zoo) |>
+    dplyr::mutate(
+      .by = c(demographic_type, month_zoo),
+      # get a chart-friendly month
+      month_f = month_zoo |> as.character() |> forcats::as_factor(),
+      # remove unused factor levels
+      demographic_value = forcats::fct_drop(f = demographic_value),
+      cohort_prop = cohort_size / sum(cohort_size, na.rm = TRUE),
+      # hover text generation
+      hover_cohort = prettyunits::pretty_num(cohort_size),
+      hover_cohort_prop = scales::percent(cohort_prop, accuracy = 0.1),
+      hover_places = dplyr::if_else(
+        condition = n_place_contrib > 1,
+        true = "Places",
+        false = "Place"
+      ),
+      hover_text = glue::glue(
+        "<b>{demographic_value}</b>
+      {hover_cohort} ({hover_cohort_prop})
+      Cohort comprised of {n_places - n_suppressed} {hover_places}"
+      ),
+      bar_text = glue::glue("{hover_cohort} ({hover_cohort_prop})")
+    )
+
+  return(df_return)
+}
+
+
+#' Display a demographic split bar chart
+#'
+#' @description
+#' This function takes a pre-summarised dataset produced by
+#' `get_data_for_demographic_split()` and generates an animated horizontal bar
+#' chart showing cohort sizes by demographic group over time.
+#'
+#' The chart uses {plotly} and includes:
+#' - one frame per month (`month_f`)
+#' - bars representing cohort size
+#' - labels positioned outside the bars
+#' - hover text showing cohort size, proportion and contributing places
+#'
+#' @param df A data frame containing summarised demographic cohort data.
+#' @param selected_demographic A character string specifying which
+#' demographic type to display (e.g., `"Age Group"`, `"Ethnic Group"`,
+#' `"Deprivation Quintile"`). Defaults to `"Age Group"`.
+#'
+#' @returns A {plotly} bar chart object
+#'
+#' @examples
+#' \dontrun{
+#' df_summary <- get_data_for_demographic_split(df)
+#' display_demographic_split_chart(df_summary, "Ethnic Group")
+#' }
+display_demographic_split_chart <- function(
+  df,
+  selected_demographic = "Age Group"
+) {
+  # validate the demographic
+  selected_demographic <- rlang::arg_match(
+    arg = selected_demographic,
+    values = df$demographic_type |> unique() |> as.character()
+  )
+
+  # filter the data for the selected demographic
+  df_plot <-
+    df |>
+    dplyr::filter(demographic_type == selected_demographic) |>
+    dplyr::mutate(
+      demographic_value = demographic_value |>
+        forcats::fct_drop() |> # remove any unused factor levels
+        forcats::fct_rev() |> # put in reverse order for correct order in plot
+        forcats::fct_relevel("Not known", after = 0) # put "Not known" last in the plot
+    )
+
+  # gather some information first
+  max_x <- max(df_plot$cohort_size, na.rm = TRUE)
+
+  # construct the plot
+  p <-
+    df_plot |>
+    plotly::plot_ly(
+      y = ~demographic_value,
+      x = ~cohort_size,
+      frame = ~month_f,
+      type = "bar",
+      text = ~bar_text,
+      textfont = list(color = "black"),
+      textposition = "outside",
+      hovertext = ~hover_text,
+      hoverinfo = "text",
+      color = I("#5881c1")
+    ) |>
+    plotly::animation_slider(currentvalue = list(prefix = "")) |>
+    plotly::layout(
+      title = list(text = glue::glue("{selected_demographic}")),
+      xaxis = list(title = "", range = c(0, max_x * 1.15), automargin = TRUE),
+      yaxis = list(title = ""),
+      font = list(family = "Roboto, Arial, sans-serif", size = 16),
+      margin = list(l = 40, r = 40, t = 100, b = 60)
+    ) |>
+    plotly::config(displaylogo = FALSE)
+
+  # return the plot
+  return(p)
 }

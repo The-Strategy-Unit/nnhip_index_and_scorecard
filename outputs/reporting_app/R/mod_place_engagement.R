@@ -7,8 +7,15 @@ mod_place_engagement_ui <- function(id) {
 
   # define the UI
   bslib::nav_panel(
-    title = "Engagement",
-    icon = bsicons::bs_icon("table"),
+    value = "engagement_place",
+    title = shiny::span(
+      bsicons::bs_icon("table"),
+      "Engagement"
+    ) |>
+      bslib::tooltip(
+        "Summary of engagement activity for each Place, showing how participation changes over time relative to cohort size.",
+        options = list(trigger = "hover")
+      ),
     bslib::layout_sidebar(
       fillable = TRUE,
       open = FALSE,
@@ -24,12 +31,12 @@ mod_place_engagement_ui <- function(id) {
 }
 
 # server ----
-mod_place_engagement_server <- function(id, df) {
+mod_place_engagement_server <- function(id, df, place) {
   shiny::moduleServer(id, function(input, output, session) {
     # update the table
     output$engagement_table <- reactable::renderReactable({
-      req(df())
-      display_engagement_table(df = df())
+      req(df(), place())
+      display_engagement_table(df = df(), place_highlight = place())
     })
   })
 }

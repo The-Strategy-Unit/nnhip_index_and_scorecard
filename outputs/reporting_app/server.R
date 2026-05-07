@@ -14,18 +14,28 @@ server <- function(input, output, session) {
     df_raw <- pins::pin_reactive_read(
       board = board,
       name = pin_name,
-      interval = 60 * 60 * 1000 # check hourly
+      interval = 1e3 * 60 * 60 # check hourly
     )
 
     # read the pin version for use as a cache key
-    pin_version <- shiny::reactive(
+    pin_version <- shiny::reactive({
+      # check for updates to the version each hour
+      shiny::invalidateLater(
+        millis = 1e3 * 60 * 60 + 1,
+        session = shiny::getDefaultReactiveDomain()
+      )
       pins::pin_meta(board = board, name = pin_name)$version
-    )
+    })
 
-    # read the pin created date (for the version)
-    pin_time <- shiny::reactive(
+    # read the pin created date for data age
+    pin_time <- shiny::reactive({
+      # check for updates to the time each hour
+      shiny::invalidateLater(
+        millis = 1e3 * 60 * 60 + 1,
+        session = shiny::getDefaultReactiveDomain()
+      )
       pins::pin_meta(board = board, name = pin_name)$created
-    )
+    })
   }
 
   # read the pin for issues / changelog
@@ -167,6 +177,20 @@ server <- function(input, output, session) {
     )
   })
 
+  # update the available demographic splits
+  shiny::observe({
+    shiny::updateSelectInput(
+      session = session,
+      inputId = "selected_demographic",
+      choices = df() |>
+        dplyr::distinct(demographic_type) |>
+        dplyr::filter_out(demographic_type == "Total") |>
+        dplyr::pull(demographic_type) |>
+        unique() |>
+        as.character()
+    )
+  })
+
   # outputs -------------------------------------------------------------------
   ## national dashboard -------------------------------------------------------
   mod_national_overview_server(
@@ -180,6 +204,20 @@ server <- function(input, output, session) {
   mod_national_engagement_server(
     id = "national_engagement",
     df = df
+  )
+
+  ## national demographic splits ----------------------------------------------
+  mod_national_demographics_server(
+    id = "national_demographics",
+    df = df,
+    selected_demographic = shiny::reactive({
+      shiny::req(input$selected_demographic)
+      input$selected_demographic
+    }),
+    df_version = shiny::reactive({
+      shiny::req(pin_version)
+      pin_version
+    })
   )
 
   ## national data coverage ---------------------------------------------------
@@ -240,6 +278,10 @@ server <- function(input, output, session) {
   # module server call
   mod_place_engagement_server(
     id = "place_engagement",
-    df = df
+    df = df,
+    place = shiny::reactive({
+      req(input$selected_place)
+      input$selected_place
+    })
   )
 }
