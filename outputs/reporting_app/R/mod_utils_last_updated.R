@@ -9,7 +9,11 @@ mod_utils_last_updated_ui <- function(id) {
   bslib::card(
     class = "p-2 text-center",
     uiOutput(ns("pin_last_updated"))
-  )
+  ) |>
+    bslib::tooltip(
+      "Time since the app's underlying data was last refreshed, helping you see how current the figures are.",
+      options = list(trigger = "hover")
+    )
 }
 
 # server ----

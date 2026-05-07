@@ -7,8 +7,15 @@ mod_place_funnel_ui <- function(id) {
 
   # define the UI
   bslib::nav_panel(
-    title = "Funnel plot",
-    icon = bsicons::bs_icon("funnel"),
+    value = "funnel_plot",
+    title = shiny::span(
+      bsicons::bs_icon("funnel"),
+      "Funnel plot"
+    ) |>
+      bslib::tooltip(
+        "Shows how each Place's observed rate compares with the expected national rate, helping you understand variation and whether differences are within expected limits.",
+        options = list(trigger = "hover")
+      ),
     bslib::layout_sidebar(
       fillable = TRUE,
       sidebar = bslib::sidebar(

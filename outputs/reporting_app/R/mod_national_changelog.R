@@ -7,8 +7,15 @@ mod_national_changelog_ui <- function(id) {
 
   # define the UI
   bslib::nav_panel(
-    title = "Change log",
-    icon = bsicons::bs_icon("journal-text"),
+    value = "change_log",
+    title = shiny::span(
+      bsicons::bs_icon("journal-text"),
+      "Change log"
+    ) |>
+      bslib::tooltip(
+        "Record of issues, observations and data-ingestion changes to support learning and transparency.",
+        options = list(trigger = "hover")
+      ),
     bslib::layout_sidebar(
       fillable = TRUE,
       sidebar = bslib::sidebar(

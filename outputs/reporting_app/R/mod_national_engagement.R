@@ -7,8 +7,15 @@ mod_national_engagement_ui <- function(id) {
 
   # define the ui
   bslib::nav_panel(
-    title = "Engagement",
-    icon = bsicons::bs_icon("graph-up"),
+    value = "engagement_national",
+    title = shiny::span(
+      bsicons::bs_icon("graph-up"),
+      "Engagement"
+    ) |>
+      bslib::tooltip(
+        "Month-by-month view of engagement in the national target cohort, highlighting progress, momentum and key milestones.",
+        options = list(trigger = "hover")
+      ),
     bslib::layout_sidebar(
       fillable = TRUE,
       open = FALSE,

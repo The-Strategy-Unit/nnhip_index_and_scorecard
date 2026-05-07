@@ -7,8 +7,15 @@ mod_national_demographics_ui <- function(id) {
 
   # define the ui
   bslib::nav_panel(
-    title = "Demographics",
-    icon = bsicons::bs_icon("bar-chart"),
+    value = "demographics",
+    title = shiny::span(
+      bsicons::bs_icon("bar-chart"),
+      "Demographics"
+    ) |>
+      bslib::tooltip(
+        "Month-by-month view of how the national cohort is distributed across demographic groups and how those proportions shift over time.",
+        options = list(trigger = "hover")
+      ),
     bslib::layout_sidebar(
       fillable = TRUE,
       open = FALSE,

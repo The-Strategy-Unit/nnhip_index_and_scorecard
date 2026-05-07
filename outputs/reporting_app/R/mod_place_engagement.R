@@ -7,8 +7,15 @@ mod_place_engagement_ui <- function(id) {
 
   # define the UI
   bslib::nav_panel(
-    title = "Engagement",
-    icon = bsicons::bs_icon("table"),
+    value = "engagement_place",
+    title = shiny::span(
+      bsicons::bs_icon("table"),
+      "Engagement"
+    ) |>
+      bslib::tooltip(
+        "Summary of engagement activity for each Place, showing how participation changes over time relative to cohort size.",
+        options = list(trigger = "hover")
+      ),
     bslib::layout_sidebar(
       fillable = TRUE,
       open = FALSE,
