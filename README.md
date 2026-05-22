@@ -1,6 +1,6 @@
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
-<img src="inst/figures/hex.png" align="right" width="180">
+<img src="inst/figures/hex.png" align="right" width="180"/>
 
 # National Neighbourhood Health Improvement Programme (NNHIP)
 
@@ -25,13 +25,13 @@ process data for the **National Neighbourhood Improvement Programme
 
     Key activities include:
 
-    -   Data ingestion and validation
+    - Data ingestion and validation
 
-    -   Quality checks (completeness, consistency, outliers)
+    - Quality checks (completeness, consistency, outliers)
 
-    -   Transformation and aggregation
+    - Transformation and aggregation
 
-    -   Scorecared metric generation
+    - Scorecard metric generation
 
 2.  **Survey - UDAL data linkage**
 
@@ -43,11 +43,11 @@ process data for the **National Neighbourhood Improvement Programme
 
     Key activities include:
 
-    -   Secure extraction of survey data
+    - Secure extraction of survey data
 
-    -   Linkage with UDAL datasets
+    - Linkage with UDAL datasets
 
-    -   Preparation of dashboard-ready datasets
+    - Preparation of dashboard-ready datasets
 
 ## Usage
 
@@ -55,7 +55,7 @@ Before running any of the workflows in this project, make sure the
 required R packages are installed. You can install all dependencies in
 one step:
 
-    devtools::install_deps()
+    pak::local_install_dev_deps()
 
 Once dependencies are installed, you can run the scripts in the R/
 directory as needed for data processing and analysis.

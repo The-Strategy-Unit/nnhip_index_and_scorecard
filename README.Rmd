@@ -11,7 +11,7 @@ knitr::opts_chunk$set(
 )
 ```
 
-<img src="inst/figures/hex.png" align="right" width="180">
+<img src="inst/figures/hex.png" align="right" width="180"/>
 
 # National Neighbourhood Health Improvement Programme (NNHIP)
 
@@ -37,7 +37,7 @@ This repository contains the code and supporting materials used to process data 
 
     -   Transformation and aggregation
 
-    -   Scorecared metric generation
+    -   Scorecard metric generation
 
 2.  **Survey - UDAL data linkage**
 
@@ -59,7 +59,7 @@ Before running any of the workflows in this project, make sure the required R pa
 
 ```{r}
 #| eval: false
-devtools::install_deps()
+pak::local_install_dev_deps()
 ```
 
 Once dependencies are installed, you can run the scripts in the R/ directory as needed for data processing and analysis.
