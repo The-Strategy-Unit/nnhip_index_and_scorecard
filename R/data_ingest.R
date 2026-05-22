@@ -736,15 +736,22 @@ ingest_data <- function(month = NULL, ms_teams_folder = NULL) {
 #' refereshes a combined dataset containing all months' submissions.
 #'
 #' @returns Invisibly returns TRUE on success
-update_pinned_data_for_month <- function() {
+update_pinned_data_for_month <- function(ms_teams_folder = NULL) {
+  # connect to the Teams / SharePoint site
+  if (is.null(ms_teams_folder)) {
+    folder <- get_ms_teams_folder()
+  } else {
+    folder <- ms_teams_folder
+  }
+
   # get a reference to the teams folder
-  ms_teams_folder <- get_ms_teams_folder()
+  # ms_teams_folder <- get_ms_teams_folder()
 
   # collate the submissions for a month
-  df_month <- collate_submissions_for_month(ms_teams_folder = ms_teams_folder)
+  df_month <- collate_submissions_for_month(ms_teams_folder = folder)
 
   # get the issues / changelog
-  df_issues <- get_issues_log(ms_teams_folder = ms_teams_folder)
+  df_issues <- get_issues_log(ms_teams_folder = folder)
 
   # get the month_id (textual representation of the month in YYYY-MM format)
   month_id <-
@@ -991,9 +998,16 @@ create_placeholder_pins <- function(from = "2026-02-01", to = "2027-3-01") {
 #' result <- validate_monthly_submissions()
 #' result$issues
 #' }
-validate_monthly_submissions <- function() {
+validate_monthly_submissions <- function(ms_teams_folder = NULL) {
+  # connect to the Teams / SharePoint site
+  if (is.null(ms_teams_folder)) {
+    folder <- get_ms_teams_folder()
+  } else {
+    folder <- ms_teams_folder
+  }
+
   # ingest the data
-  df <- collate_submissions_for_month()
+  df <- collate_submissions_for_month(ms_teams_folder = folder)
 
   # run validation checks
   issues <- list()
