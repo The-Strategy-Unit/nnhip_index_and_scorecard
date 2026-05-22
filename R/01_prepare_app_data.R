@@ -11,9 +11,12 @@
 
 source(here::here("R", "data_ingest.R"))
 
+# authenticate with the MS Teams folders
+folder <- get_ms_teams_folder()
+
 # --- Validation checks -------------------------------------------------------
 # run a validation check on submissions
-validation <- validate_monthly_submissions()
+validation <- validate_monthly_submissions(ms_teams_folder = folder)
 
 # if issues detected then investigate:
 validation$issues |> View()
@@ -25,4 +28,4 @@ launch_app_with_test_data()
 # --- Process data ------------------------------------------------------------
 
 # when ready to update the data, run this:
-update_pinned_data_for_month()
+update_pinned_data_for_month(ms_teams_folder = folder)
