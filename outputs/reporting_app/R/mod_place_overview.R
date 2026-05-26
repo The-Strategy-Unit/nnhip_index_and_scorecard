@@ -19,7 +19,8 @@ mod_place_overview_ui <- function(id) {
     bslib::layout_sidebar(
       fillable = TRUE,
       sidebar = bslib::sidebar(
-        open = FALSE,
+        open = TRUE,
+        width = "400px",
         shiny::includeMarkdown("descriptions/place_overview.md")
       ),
       bslib::card_body(
