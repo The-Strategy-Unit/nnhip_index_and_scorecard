@@ -20,7 +20,8 @@ mod_national_demographics_ui <- function(id) {
       fillable = TRUE,
       open = FALSE,
       sidebar = bslib::sidebar(
-        open = FALSE,
+        open = TRUE,
+        width = "400px",
         shiny::includeMarkdown("descriptions/national_demographics.md")
       ),
       bslib::card_body(

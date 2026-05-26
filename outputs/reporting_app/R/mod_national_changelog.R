@@ -19,7 +19,8 @@ mod_national_changelog_ui <- function(id) {
     bslib::layout_sidebar(
       fillable = TRUE,
       sidebar = bslib::sidebar(
-        open = FALSE,
+        open = TRUE,
+        width = "400px",
         shiny::includeMarkdown("descriptions/national_changelog.md")
       ),
       bslib::card_body(

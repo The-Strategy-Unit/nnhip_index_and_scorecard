@@ -19,7 +19,8 @@ mod_national_overview_ui <- function(id) {
     bslib::layout_sidebar(
       fillable = TRUE,
       sidebar = bslib::sidebar(
-        open = FALSE,
+        open = TRUE,
+        width = "400px",
         shiny::includeMarkdown("descriptions/national_overview.md")
       ),
       bslib::card_body(
