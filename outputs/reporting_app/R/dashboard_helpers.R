@@ -2188,6 +2188,13 @@ display_national_engagement_plot <- function(df) {
     ann_list <- add_annotation_to_list(df = df, idx = idx, str_desc = label)
   }
 
+  # define the x-axis range
+  one_month <- lubridate::period(num = 2, units = "weeks")
+  xaxis_range <- c(
+    df$month_dt |> min(na.rm = TRUE) - one_month,
+    df$month_dt |> max(na.rm = TRUE) + one_month
+  )
+
   # construct the plot
   plotly::plot_ly(
     data = df,
@@ -2221,7 +2228,8 @@ display_national_engagement_plot <- function(df) {
       xaxis = list(
         tickformat = "%b %Y",
         dtick = "M1",
-        title = "Submission period"
+        title = "Submission period",
+        range = xaxis_range
       ),
       yaxis = list(title = ""),
       # add the annotations to the plot
