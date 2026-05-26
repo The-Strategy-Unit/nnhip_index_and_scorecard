@@ -2189,10 +2189,10 @@ display_national_engagement_plot <- function(df) {
   }
 
   # define the x-axis range
-  one_month <- lubridate::period(num = 2, units = "weeks")
+  buffer <- lubridate::period(num = 2, units = "weeks")
   xaxis_range <- c(
-    df$month_dt |> min(na.rm = TRUE) - one_month,
-    df$month_dt |> max(na.rm = TRUE) + one_month
+    df$month_dt |> min(na.rm = TRUE) - buffer,
+    df$month_dt |> max(na.rm = TRUE) + buffer
   )
 
   # construct the plot
