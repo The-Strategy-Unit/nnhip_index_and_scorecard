@@ -1,0 +1,308 @@
+---
+title: "Update report"
+format:
+  html:
+    toc: true
+    code-fold: true
+    theme: cosmo
+    embed-resources: true
+---
+
+## About
+
+This report is designed to help with providing updates to NNHIP senior team, (most likely Jenny and Katie), on changes in the most recent aggregate data submissions.
+
+```{r}
+#| label: setup
+#| message: false
+
+# sourcing
+
+here::here("outputs", "reporting_app", "R", "dashboard_helpers.R") |> source()
+
+here::here(".Renviron") |> readRenviron()
+# readRenviron(".Renviron")
+
+# connect to the Posit Connect board
+server <- Sys.getenv("posit_server_https")
+account <- Sys.getenv("posit_account")
+prefix <- Sys.getenv("pin_prefix")
+api_key <- Sys.getenv("posit_api_key")
+
+board <- pins::board_connect(
+  auth = "manual",
+  server = server,
+  key = api_key
+)
+
+pin_name <- glue::glue("{prefix}all")
+pin_name_issues <- glue::glue("{prefix}issueslog")
+
+# define a list of places where we expect to receive information
+expected_places <- c(
+  "Fenland and Peterborough within the North Cambridgeshire and Peterborough Care Partnership",
+  "Ipswich and East Suffolk",
+  "North East Essex",
+  "South and West Hertfordshire (Dacorum and Hertsmere)",
+  "West Essex",
+  "West Suffolk",
+  "Barking and Dagenham",
+  "Croydon",
+  "Hillingdon",
+  "Kensington, Chelsea and Westminster (Bi-Borough)",
+  "Lambeth and Southwark",
+  "Coventry",
+  "East Birmingham",
+  "Herefordshire",
+  "Leicestershire (West)",
+  "Nottingham City",
+  "Shropshire",
+  "Solihull",
+  "Walsall",
+  "Bradford and Craven (Bradford South, Keighley and Airedale)",
+  "Doncaster",
+  "Leeds (Hatch, South, East)",
+  "North East Lincolnshire",
+  "Rotherham",
+  "Stockton",
+  "Sunderland",
+  "Wakefield",
+  "Blackburn and Darwen",
+  "Morecambe Bay",
+  "Rochdale",
+  "Sefton",
+  "St Helens",
+  "Stockport",
+  "Buckinghamshire (North, High Wycombe, Marlow Beaconsfield)",
+  "East Berkshire and Slough",
+  "East Kent",
+  "East Surrey (Surrey Downs)",
+  "East Sussex (Hastings and Rother)",
+  "Portsmouth",
+  "Bristol (South Bristol)",
+  "Cornwall and The Isles Of Scilly",
+  "Dorset Place ",
+  "Woodspring"
+) |>
+  stringr::str_trim() |>
+  sort()
+
+
+# prepare the data
+df_raw <-
+  pins::pin_read(
+    board = board,
+    name = pin_name
+  )
+
+# process the data to make it ready for use in the app
+df <-     
+  df_raw |>
+  # ensure there is a consistent 'metric' for each block of values
+  add_metric_column_to_df() |>
+  # ensure counts below threshold are suppressed
+  suppress_counts() |>
+  # prepare columns for use in select inputs
+  factorise_columns() |>
+  # indicate whether place-month has record of engagement with target cohort
+  add_active_engagement_columns()
+
+df_issues <-
+  pins::pin_read(
+    board = board,
+    name = pin_name_issues
+  )
+```
+
+```{r}
+#| label: this_month
+
+df_summary <-
+  df |> 
+  dplyr::distinct(place, month_zoo)
+
+this_month <-
+  df |> 
+  dplyr::pull(month_zoo) |> 
+  max(na.rm = TRUE)
+```
+
+# Reporting month: **`r this_month`**
+
+## New Places submitting this month
+```{r}
+#| label: new_places_this_month
+#| output: asis
+
+# identify any Places submitting this month for the first time
+first_time_submitters <-
+  df_summary |> 
+  dplyr::summarise(
+    first_month = min(month_zoo),
+    .by = place
+  ) |> 
+  dplyr::filter(first_month == this_month) |> 
+  dplyr::pull(place)
+
+# output the names of any Places submitting this month
+if(length(first_time_submitters) > 0) {
+  cat(paste0("- ", first_time_submitters, collapse = "\n"))
+} else {
+  cat("No new Places submitted this month.")
+}
+```
+
+## Places missing (who've submitted before)
+```{r}
+#| label: old_places_missing
+#| output: asis
+
+# identify any Places who've submitted before but haven't yet this month
+missing_submitters <-
+  df_summary |> 
+  dplyr::mutate(
+    submitted_this_month = (month_zoo == this_month),
+    .by = place
+  ) |> 
+  dplyr::summarise(
+    submitted_this_month = any(submitted_this_month),
+    months_submitted = paste(month_zoo, collapse = ", "),
+    .by = place
+  ) |> 
+  dplyr::filter(!submitted_this_month) |> 
+  dplyr::select(-submitted_this_month)
+
+# display as a table
+missing_submitters |> 
+  gt::gt() |> 
+  gt::cols_label(
+    place = "Place",
+    months_submitted = "Previous submissions"
+  ) |> 
+  gt::cols_align(
+    align = "left"
+  )
+
+# display as a list (for copy-n-pasting)
+if(length(missing_submitters$place) > 0) {
+  cat(paste0("- ", missing_submitters$place, collapse = "\n"))
+} else {
+  cat("All known Places submitted this month")
+}
+```
+
+## Places never submitted
+```{r}
+#| label: places_never_submitted
+#| output: asis
+
+# identify places which have never submitted
+places_unknown <-
+  setdiff(
+    y = df_summary$place |> unique(), 
+    x = expected_places
+  )
+
+# print as a list
+if (length(places_unknown) > 0) {
+  htmltools::tagList(
+    htmltools::p(
+      glue::glue(
+        "There are {length(places_unknown)} Places which have not submitted yet:"
+      )
+    ),
+    htmltools::tags$ul(
+      lapply(places_unknown, htmltools::tags$li)
+    )
+  )
+} else {
+  htmltools::p("All Places have submitted data at least once.")
+}
+```
+
+## Summary of changes / issues
+
+### Resubmissions
+
+```{r}
+#| label: resubmissions
+#| output: asis
+
+df_resubmissions <- 
+  df_issues |> 
+  # get all issues logged within the last 2 weeks
+  dplyr::filter(date >= (Sys.Date() - lubridate::weeks(2))) |> 
+  dplyr::filter(event_type == "Resubmission")  |> 
+  dplyr::mutate(month_zoo = month |> zoo::as.yearmon()) |> 
+  dplyr::distinct(place_affected, month_zoo) |> 
+  dplyr::arrange(month_zoo, place_affected) |> 
+  dplyr::summarise(
+    months = paste0(month_zoo, collapse = ", "),
+    .by = place_affected
+  ) |> 
+  dplyr::arrange(place_affected)
+
+if(nrow(df_resubmissions) > 0) {
+  cat(paste0("- ", df_resubmissions$place_affected, ": ", df_resubmissions$months, collapse = "\n"))
+} else {
+  "No resubmissions received this month."
+}
+
+```
+
+
+### Data caveats
+
+This is designed to be copied into Copilot to summarise the themes:
+
+```{r}
+#| label: data_caveats
+#| output: asis
+
+df_data_caveat <-
+  df_issues |>
+  dplyr::mutate(month_zoo = month |> zoo::as.yearmon()) |> 
+  dplyr::filter(
+    month_zoo == this_month,
+    event_type == "Data caveat"
+  )
+```
+
+
+```{r}
+#| label: data_caveats_places
+#| output: asis
+if (nrow(df_data_caveat) > 0) {
+  txt <- c(
+    "Places with data caveats this month:",
+    "",
+    paste0("- ", df_data_caveat$place_affected)
+  )
+  knitr::asis_output(paste(txt, collapse = "\n"))
+} else {
+  knitr::asis_output("No data caveats were reported this month.")
+}
+```
+
+:::{.callout-tip}
+The following is designed to be copied into Copilot to summarise the caveats into themes.
+:::
+
+
+```{r}
+#| label: data_caveats_themes_prompt
+#| output: asis
+prompt <- c(
+  "Please summarise the following data submission caveats into up to three themes.",
+  "Each theme should:",
+  "- capture a common underlying issue",
+  "- be phrased as a short, clear heading",
+  "- include a 1-2 sentence explanation",
+  "",
+  "Caveats:",
+  paste0("- ", df_data_caveat$description)
+)
+
+knitr::asis_output(paste(prompt, collapse = "\n"))
+
+```
