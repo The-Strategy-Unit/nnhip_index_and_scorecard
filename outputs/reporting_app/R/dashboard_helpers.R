@@ -1453,6 +1453,231 @@ display_engagement_table <- function(df, place_highlight = NULL) {
     )
 }
 
+#' Prepare wide-format data for submission-style display
+#'
+#' @description
+#' This function filters the NNHIP dataset to a selected place and month,
+#' applies suppression rules, orders demographic categories and pivots the data
+#' into the wide format used in the original submission template.
+#'
+#' @details
+#' The function performs several steps:
+#' - Validates that the selected Place and month exist in the dataset
+#' - Filters to the requested Place and month
+#' - Applies suppression rules, converting suppressed avlues to `"*"`
+#' - Orders demographic types to match the submission template
+#' - Converts values to character strings for pivoting
+#' - Pivots the data wider, producing one column per demographic category
+#' - Reorders columns so that `Total` appears before age groups
+#'
+#' @param df A data frame containing the long-format NNHIP metrics
+#' @param selected_place A single place name to filter for (e.g., "East Kent")
+#' @param selected_month A zoo::yearmon value indicating the month to filter for
+#'
+#' @returns A wide-format data frame suitable for display using {gt}
+#'
+#' @examples
+#' \dontrun{
+#' get_data_for_submission_view(df, "East Kent", zoo::as.yearmon("Mar 2026"))
+#' }
+get_data_for_submission_view <- function(df, selected_place, selected_month) {
+  # defensive checks
+  df_check <- df |> dplyr::distinct(place, month_zoo)
+
+  if (!selected_place %in% df_check$place) {
+    shiny::validate(
+      shiny::need(
+        expr = FALSE,
+        message = glue::glue("No data available for place: {selected_place}")
+      )
+    )
+  }
+
+  if (!selected_month %in% df_check$month_zoo) {
+    shiny::validate(
+      shiny::need(
+        expr = FALSE,
+        message = glue::glue("No data available for month: {selected_month}")
+      )
+    )
+  }
+
+  if (
+    df_check |>
+      dplyr::filter(place == selected_place, month_zoo == selected_month) |>
+      nrow() ==
+      0
+  ) {
+    shiny::validate(
+      shiny::need(
+        expr = FALSE,
+        message = glue::glue(
+          "{selected_place} doesn't have data for the month of {selected_month}"
+        )
+      )
+    )
+  }
+
+  # produce the data
+  df_return <-
+    df |>
+
+    # filter to just the selected place
+    dplyr::filter(
+      place == selected_place,
+      month_zoo == selected_month
+    ) |>
+
+    # limit the data to essential columns
+    dplyr::select(
+      place,
+      month_zoo,
+      metric_id,
+      metric_block,
+      metric_type,
+      demographic_type,
+      demographic_value,
+      value_type,
+      value,
+      value_suppressed,
+      metric
+    ) |>
+
+    # convert some data
+    dplyr::mutate(
+      # re-create the ordering
+      demographic_type = factor(
+        x = demographic_type,
+        levels = c(
+          "Total",
+          "Age Group",
+          "Ethnic Group",
+          "Deprivation Quintile"
+        )
+      ),
+      # round rates to two digits
+      value = round(x = value, digits = 2),
+
+      # convert values to strings (allow to be combined with '*')
+      value_s = dplyr::if_else(
+        condition = value_suppressed,
+        true = "*",
+        false = as.character(value)
+      )
+    ) |>
+    # trim fields no longer needed
+    dplyr::select(-c(value_suppressed, value)) |>
+
+    # pivot the data wider
+    dplyr::arrange(demographic_type) |>
+    tidyr::pivot_wider(
+      names_from = c(demographic_type, demographic_value),
+      values_from = value_s
+    ) |>
+
+    # prepare for output
+    dplyr::arrange(
+      place,
+      month_zoo,
+      metric_block,
+      value_type
+    )
+  # |>
+  # dplyr::relocate(Total_Total, .before = `Age Group_18-19`)
+
+  if (all(c("Total_Total", "Age Group_18-19") %in% names(df_return))) {
+    df_return <- dplyr::relocate(
+      df_return,
+      Total_Total,
+      .before = `Age Group_18-19`
+    )
+  }
+  # return the result
+  return(df_return)
+}
+
+#' Display a submission-style table using {gt}
+#'
+#' @description
+#' This function takes the wide-format output from
+#' `get_data_for_submission_view()` and renders it as a formatted {gt} table that
+#' visually resembles the original NNHIP submission spreadsheet.
+#'
+#' @details
+#' The table includes:
+#' - Row groups based on the metric description
+#' - Stub labels based on {value_type}
+#' - Column spanners for age, ethnicity and deprivation categories
+#' - Suppression indicators and compact value-type labels (N/D/R)
+#' - A wide layout suitable for horizontal scrolling in Shiny
+#'
+#' @param df A wide-format data frame produced by `get_data_for_submission_view()`
+#' @param selected_place A character string used as the table title
+#' @param selected_month A character or {yearmon} value used as the subtitle
+#'
+#' @returns A {gt} table object
+#'
+#' @examples
+#' \dontrun{
+#' df_wide <- get_data_for_submission(df, "East Kent", zoo::as.yearmon("Mar 2026"))
+#' display_submission_view_table(df_wide, "East Kent", "Mar 2026")
+#' }
+display_submission_view_table <- function(df, selected_place, selected_month) {
+  # produce the formatted table
+  t <-
+    df |>
+    gt::gt(
+      groupname_col = "metric",
+      row_group_as_column = TRUE,
+      rowname_col = "value_type"
+    ) |>
+    # sort out the columns
+    gt::cols_label(Total_Total = "Total") |>
+    gt::tab_spanner_delim(
+      columns = c(`Age Group_18-19`:`Deprivation Quintile_Not known`),
+      delim = "_"
+    ) |>
+    gt::cols_hide(
+      columns = c(place, month_zoo, metric_block, metric_id, metric_type)
+    ) |>
+    # try to give the metric description enough space
+    # (not likely as very wide table, but doing anyway)
+    gt::cols_width(gt::row_group() ~ gt::px(200)) |>
+    # adding title and captions
+    gt::tab_header(
+      title = selected_place,
+      subtitle = selected_month
+    ) |>
+    gt::tab_caption(
+      caption = "'*' = Suppressed data | 'N' = numerator | 'D' = denominator | 'R' = rate per 1,000"
+    ) |>
+    # styling and formatting
+    gt::tab_style(
+      style = gt::cell_borders(
+        sides = c("left"),
+        color = "#dcdde1",
+        weight = gt::px(2)
+      ),
+      locations = gt::cells_body(
+        columns = c(
+          `Age Group_18-19`,
+          `Ethnic Group_White`,
+          `Deprivation Quintile_1`
+        )
+      )
+    ) |>
+    # re-label the value types to save horizontal space
+    gt::text_case_match(
+      .replace = "all",
+      .locations = gt::cells_stub(rows = gt::everything()),
+      "count" ~ "N",
+      "patients" ~ "D",
+      "rate_per_1000" ~ "R"
+    )
+
+  # return the result
+  return(t)
+}
 
 # National views --------------------------------------------------------------
 

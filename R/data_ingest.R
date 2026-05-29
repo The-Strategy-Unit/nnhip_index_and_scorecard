@@ -25,7 +25,7 @@ get_ms_teams_folder <- function(base_folder = "Neighbourhood DC") {
   channel_name <- Sys.getenv("su_channel")
   if (team_name == "" || channel_name == "") {
     cli::cli_abort(
-      "Environment variables {.var su_team} and {.var su_channel} must be set."
+      "Environment variables {.var {su_team}} and {.var {su_channel}} must be set."
     )
   }
 
@@ -362,7 +362,7 @@ get_submissiontemplate_header <- function(df_raw) {
 #' }
 process_submissiontemplate_data <- function(
   df_raw,
-  suppression_marker = c("*", "", "<5", "-"),
+  suppression_marker = c("*", "", "<5", "-", "<6"),
   # suppression_marker = c("*", ""),
   filepath = NULL
 ) {
@@ -1022,6 +1022,8 @@ validate_monthly_submissions <- function(ms_teams_folder = NULL) {
   issues[[length(issues) + 1]] <- check_month_consistency(df = df)
   # check 5: all metric_block | metric_details combo are consistent
   # issues[[length(issues) + 1]] <- check_metric_alignment(df = df)
+  # check 6: all placs have the same number of records
+  issues[[length(issues) + 1]] <- check_place_consistency(df = df)
 
   # combine issues into a single data frame
   issues_df <- if (length(issues) == 0) {
@@ -1294,6 +1296,70 @@ check_month_consistency <- function(df) {
   }
 }
 
+#' Check consistency of record counts across places
+#'
+#' @description
+#' Identifies places that have an unexpected number of records compared with
+#' the modal (most common) place count. This helps detect re-submissions which
+#' have not been handled correctly.
+#'
+#' @details
+#' The function groups the input data frame by `place` and counts the number of
+#' records associated with each place. Places whose record count differs from
+#' the maximum (i.e. the modal count) are flagged as suspicious.
+#'
+#' If no inconsistencies are found, the function returns an empty issue schema.
+#'
+#' @param df data frame of ingested metrics data
+#'
+#' @returns A data frame of issues (possibly empty) with fields suitable for
+#' logging in the data-issues log
+check_place_consistency <- function(df) {
+  # define suspicious counts - places with more records than the modal place count
+  suspicious <- df |>
+    dplyr::mutate(counter = 1L) |>
+    dplyr::summarise(
+      n_records = sum(counter, na.rm = TRUE),
+      .by = place
+    ) |>
+    dplyr::filter_out(n_records == mode_val(n_records))
+
+  # if nothing suspicious, return an empty tibble
+  if (nrow(suspicious) == 0) {
+    return(empty_issue_schema())
+  }
+
+  # otherwise return structured issues
+  if (nrow(suspicious) > 0) {
+    places_sus <- suspicious$place |> unique() |> sort()
+
+    cli::cli_alert_danger(
+      "Places found with an unusual number of records: {.val {places_sus}}. Check the submissions folder for duplicate entries or for re-submissions which have not been properly excluded.",
+      wrap = TRUE
+    )
+
+    suspicious |>
+      dplyr::mutate(
+        issue_type = "Place anomaly",
+        description = "Places with unusual number of records",
+        place = place,
+        field = "place",
+        value = paste(place),
+        impact = "Submission is likely to be duplicate / re-submission",
+        status = "Open"
+      ) |>
+      dplyr::select(
+        issue_type,
+        description,
+        place,
+        field,
+        value,
+        impact,
+        status
+      )
+  }
+}
+
 #' Check for misalignment in metric definitions
 #'
 #' @description
@@ -1390,4 +1456,27 @@ launch_app_with_test_data <- function() {
       browseURL(url)
     }
   )
+}
+
+
+#' Return the mode value
+#'
+#' @description
+#' Works out the mode value from a given vector of values.
+#'
+#' @details
+#' Code taken from here:
+#' https://stackoverflow.com/questions/2547402/how-to-find-the-statistical-mode
+#'
+#' @param x A vector of values
+#'
+#' @returns A numeric value containing the modal value
+#'
+#' @examples
+#' \dontrun{
+#' mode_val(c(3, 5, 5, 9, 5, 1, 3, 5))
+#' }
+mode_val <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
 }
