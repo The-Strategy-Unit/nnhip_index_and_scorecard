@@ -136,6 +136,27 @@ server <- function(input, output, session) {
       dplyr::pull(metric)
   })
 
+  # ui reactives --------------------------------------------------------------
+  input_selected_place <- shiny::reactive({
+    shiny::req(input$selected_place)
+    input$selected_place
+  })
+
+  input_selected_metric <- shiny::reactive({
+    req(input$selected_metric)
+    input$selected_metric
+  })
+
+  input_selected_month <- shiny::reactive({
+    req(input$selected_month)
+    input$selected_month |> zoo::as.yearmon()
+  })
+
+  input_selected_demographic <- shiny::reactive({
+    shiny::req(input$selected_demographic)
+    input$selected_demographic
+  })
+
   # update ui inputs ----------------------------------------------------------
   # update the data refresh time
   mod_utils_last_updated_server(
@@ -210,10 +231,7 @@ server <- function(input, output, session) {
   mod_national_demographics_server(
     id = "national_demographics",
     df = df,
-    selected_demographic = shiny::reactive({
-      shiny::req(input$selected_demographic)
-      input$selected_demographic
-    }),
+    selected_demographic = input_selected_demographic,
     df_version = shiny::reactive({
       shiny::req(pin_version)
       pin_version
@@ -234,19 +252,13 @@ server <- function(input, output, session) {
 
   ## place dashboard ----------------------------------------------------------
   # card header text
-  output$place_header <- shiny::renderText({
-    shiny::req(input$selected_place)
-    input$selected_place
-  })
+  output$place_header <- input_selected_place
 
   # module server call
   mod_place_overview_server(
     id = "place_overview",
     df = df,
-    place = shiny::reactive({
-      shiny::req(input$selected_place)
-      input$selected_place
-    }),
+    place = input_selected_place,
     month_current = filtered_month_current,
     month_previous = filtered_month_previous
   )
@@ -256,32 +268,33 @@ server <- function(input, output, session) {
   mod_place_funnel_server(
     id = "place_funnel",
     df = df_selected_month,
-    place = shiny::reactive({
-      req(input$selected_place)
-      input$selected_place
-    }),
-    metric = shiny::reactive({
-      req(input$selected_metric)
-      input$selected_metric
-    }),
-    month = shiny::reactive({
-      req(input$selected_month)
-      input$selected_month |> zoo::as.yearmon()
-    }),
+    place = input_selected_place,
+    metric = input_selected_metric,
+    month = input_selected_month,
     df_version = shiny::reactive({
       req(pin_version)
       pin_version
     })
   )
 
-  ## engagement table ---------------------------------------------------------
+  ## place engagement table ---------------------------------------------------
   # module server call
   mod_place_engagement_server(
     id = "place_engagement",
     df = df,
-    place = shiny::reactive({
-      req(input$selected_place)
-      input$selected_place
+    place = input_selected_place
+  )
+
+  ## place submission table ---------------------------------------------------
+  # module server call
+  mod_place_submission_server(
+    id = "place_submission",
+    df = df,
+    place = input_selected_place,
+    month = input_selected_month,
+    pin_version = shiny::reactive({
+      req(pin_version)
+      pin_version
     })
   )
 }
