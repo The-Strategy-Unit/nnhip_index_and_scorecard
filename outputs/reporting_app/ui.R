@@ -121,7 +121,7 @@ ui <- function(request) {
 
             # select a month (conditional)
             shiny::conditionalPanel(
-              condition = "input.place_tabs == 'funnel_plot'",
+              condition = "input.place_tabs == 'funnel_plot' || input.place_tabs == 'submission_view'",
               shiny::selectizeInput(
                 inputId = "selected_month",
                 label = "Month:",
@@ -164,7 +164,10 @@ ui <- function(request) {
             mod_place_funnel_ui("place_funnel"),
 
             # engagement table ----
-            mod_place_engagement_ui("place_engagement")
+            mod_place_engagement_ui("place_engagement"),
+
+            # submission view table ----
+            mod_place_submission_ui("place_submission")
           )
         )
       )
