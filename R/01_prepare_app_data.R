@@ -29,3 +29,11 @@ launch_app_with_test_data()
 
 # when ready to update the data, run this:
 update_pinned_data_for_month(ms_teams_folder = folder)
+
+# run a report showing updates
+quarto::quarto_render(
+  input = here::here("outputs", "monthly_updates", "report_v1.qmd")
+)
+
+# open the report
+browseURL(here::here("outputs", "monthly_updates", "report_v1.html"))
