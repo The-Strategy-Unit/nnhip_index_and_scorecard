@@ -631,6 +631,13 @@ process_submission <- function(str_submission_filepath) {
     filepath = str_submission_filepath
   )
 
+  # basic validation - check for missing place name
+  if (is.na(ls_details[1])) {
+    cli::cli_alert_danger(
+      "Place name is missing for {.val {str_submission_filepath |> basename()}}"
+    )
+  }
+
   # combine the details and template
   df_return <-
     tibble::tibble(
@@ -1022,8 +1029,10 @@ validate_monthly_submissions <- function(ms_teams_folder = NULL) {
   issues[[length(issues) + 1]] <- check_month_consistency(df = df)
   # check 5: all metric_block | metric_details combo are consistent
   # issues[[length(issues) + 1]] <- check_metric_alignment(df = df)
-  # check 6: all placs have the same number of records
+  # check 6: all places have the same number of records
   issues[[length(issues) + 1]] <- check_place_consistency(df = df)
+  # check 7: all places have non-NA names
+  issues[[length(issues) + 1]] <- check_place_missing(df = df)
 
   # combine issues into a single data frame
   issues_df <- if (length(issues) == 0) {
@@ -1413,6 +1422,60 @@ check_metric_alignment <- function(df) {
         field = "metric_block | metric_details",
         value = paste(metric_block, metric_details, sep = ": "),
         impact = "Metric details do not align and dashboard unlikely to load",
+        status = "Open"
+      ) |>
+      dplyr::select(
+        issue_type,
+        description,
+        place,
+        field,
+        value,
+        impact,
+        status
+      )
+  }
+}
+
+#' Check for Place names with `NA` values
+#'
+#' @description
+#' Identifies records where the Place name is missing (`NA`).
+#'
+#' @param df data frame of ingested metrics data
+#'
+#' @returns A data frame of issues (possibly empty) with fields suitable for
+#' logging in the data-issues log
+check_place_missing <- function(df) {
+  # define suspicious records - where place is NA
+  suspicious <- df |>
+    dplyr::filter(is.na(place))
+
+  # if nothing suspicious, return an empty tibble
+  if (nrow(suspicious) == 0) {
+    return(empty_issue_schema())
+  }
+
+  # otherwise return structured issues
+  if (nrow(suspicious) != 0) {
+    # just print directly the console (for now - may remove in future)
+    suspicious
+
+    # get the unusual records
+    suspicious <- suspicious |> dplyr::distinct(place, month_zoo)
+
+    cli::cli_alert_danger(
+      "Missing (`NA`) values for Place.",
+      wrap = TRUE
+    )
+
+    suspicious |>
+      dplyr::mutate(
+        issue_type = "Missing place name",
+        description = "Place name is `NA` for one or more records",
+        place = place,
+        field = "place",
+        value = "NA",
+        impact = "Activity will not be assigned to the correct Place",
         status = "Open"
       ) |>
       dplyr::select(
