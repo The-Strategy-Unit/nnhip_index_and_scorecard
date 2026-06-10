@@ -112,8 +112,8 @@ ui <- function(request) {
           # overview metrics
           mod_national_overview_ui("national_overview"),
 
-          # engagement plot
-          mod_national_engagement_ui("national_engagement"),
+          # engagement plot (disabled for now)
+          # mod_national_engagement_ui("national_engagement"),
 
           # demographics plot
           mod_national_demographics_ui("national_demographics"),
