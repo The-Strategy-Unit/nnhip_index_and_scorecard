@@ -14,6 +14,49 @@ ui <- function(request) {
       href = "_SUBrand.SyleSheet.css"
     ),
 
+    # documentation section ---------------------------------------------------
+    bslib::nav_menu(
+      title = span(
+        bsicons::bs_icon("book"),
+        "Documentation",
+        class = "documentation-menu"
+      ) |>
+        bslib::tooltip(
+          "Helpful documents for understanding the measures and completing monthly submisisons",
+          options = list(trigger = "hover")
+        ),
+      align = "right",
+
+      # measurement guide
+      bslib::nav_item(
+        shiny::tags$a(
+          href = "NNHIP measurement guide_v1.2.pdf",
+          target = "_blank",
+          style = "text-decoration: none; color: inherit;",
+          bsicons::bs_icon("file-earmark-pdf"),
+          htmltools::span("Measurement Guide") |>
+            bslib::tooltip(
+              "Guidance on how NNHIP measures are defined and how Places should implement them",
+              options = list(trigger = "hover")
+            )
+        )
+      ),
+      # submission template
+      bslib::nav_item(
+        shiny::tags$a(
+          href = "NNHIPDataCollectionTemplatev1.2.xlsx",
+          target = "_blank",
+          style = "text-decoration: none; color: inherit;",
+          bsicons::bs_icon("file-earmark-spreadsheet"),
+          htmltools::span("Submission template") |>
+            bslib::tooltip(
+              "Excel template for submitting monthly NNHIP data",
+              options = list(trigger = "hover")
+            )
+        )
+      )
+    ),
+
     # national section --------------------------------------------------------
     bslib::nav_panel(
       value = "national_view",
