@@ -11,7 +11,8 @@ This table summarises engagement activity at the **Place** level, showing how pa
   A column indicating how many people are included in the cohort for that place. This figure is the most recent estimate of the number of patients in the target cohort.
 
 - **Monthly engagement counts**
-  The month columns show the number of engaged individuals for that place in each month. This figure is taken from metric "P1" for each month.
+  The month columns show the number of engaged individuals for that Place in each month. This figure is taken from metric "P1".
+  *Due to differences in models and recording, it may not be appropriate to compare engagement between Places*.
 
 - **Engagement rate**
   A percentage summarising overall engagement relative to cohort size, formatted to one decimal place. This figure is calculated using the most recent engagement count, where missing engagement values are treated as 0.
