@@ -112,6 +112,17 @@ server <- function(input, output, session) {
       zoo::yearmon()
   })
 
+  # list of months for the national views
+  national_months <- shiny::reactive({
+    req(df())
+
+    df() |>
+      dplyr::pull(month_zoo) |>
+      unique() |>
+      sort() |>
+      zoo::yearmon()
+  })
+
   # get the latest / current month
   filtered_month_current <- shiny::reactive({
     req(filtered_months())
@@ -119,11 +130,23 @@ server <- function(input, output, session) {
     filtered_months() |> tail(n = 1L)
   })
 
+  national_month_current <- shiny::reactive({
+    req(national_months())
+
+    national_months() |> tail(n = 1L)
+  })
+
   # get the month before the current one
   filtered_month_previous <- shiny::reactive({
     req(filtered_months())
 
     filtered_months() |> tail(n = 2L) |> min()
+  })
+
+  national_month_previous <- shiny::reactive({
+    req(national_months())
+
+    national_months() |> tail(n = 2L) |> min()
   })
 
   # get a list of metrics
@@ -217,8 +240,8 @@ server <- function(input, output, session) {
   mod_national_overview_server(
     id = "national_overview",
     df = df,
-    month_current = filtered_month_current,
-    month_previous = filtered_month_previous
+    month_current = national_month_current,
+    month_previous = national_month_previous
   )
 
   ## national engagement plot -------------------------------------------------
