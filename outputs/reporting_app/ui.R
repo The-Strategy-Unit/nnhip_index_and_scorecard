@@ -34,7 +34,7 @@ ui <- function(request) {
           target = "_blank",
           style = "text-decoration: none; color: inherit;",
           bsicons::bs_icon("file-earmark-pdf"),
-          htmltools::span("Measurement Guide") |>
+          htmltools::span("Measurement guide") |>
             bslib::tooltip(
               "Guidance on how NNHIP measures are defined and how Places should implement them",
               options = list(trigger = "hover")
