@@ -17,6 +17,7 @@ mod_national_demographics_ui <- function(id) {
         options = list(trigger = "hover")
       ),
     bslib::layout_sidebar(
+      id = "national_overview_description",
       fillable = TRUE,
       open = FALSE,
       sidebar = bslib::sidebar(
@@ -25,7 +26,9 @@ mod_national_demographics_ui <- function(id) {
         shiny::includeMarkdown("descriptions/national_demographics.md")
       ),
       bslib::card_body(
-        plotly::plotlyOutput(ns("demographics_plot"))
+        id = "national_overview",
+        plotly::plotlyOutput(ns("demographics_plot")),
+        fill = TRUE
       )
     )
   )

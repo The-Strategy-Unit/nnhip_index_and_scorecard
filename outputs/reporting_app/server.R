@@ -180,6 +180,12 @@ server <- function(input, output, session) {
     input$selected_demographic
   })
 
+  # ui observers --------------------------------------------------------------
+  shiny::observeEvent(input$start_tour, {
+    # test - conductor
+    conductor$init()$start()
+  })
+
   # update ui inputs ----------------------------------------------------------
   # update the data refresh time
   mod_utils_last_updated_server(
