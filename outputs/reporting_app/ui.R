@@ -1,5 +1,6 @@
 ui <- function(request) {
   bslib::page_navbar(
+    id = "nav_main",
     title = shiny::tags$img(
       src = "logos/nnhip_logo.png",
       style = "height:60px;",
@@ -8,10 +9,13 @@ ui <- function(request) {
 
     # theming
     theme = bslib::bs_theme(brand = TRUE, card_bg = "white"),
-    header = shiny::tags$link(
-      rel = "stylesheet",
-      type = "text/css",
-      href = "_SUBrand.SyleSheet.css"
+    header = shiny::tagList(
+      shiny::tags$link(
+        rel = "stylesheet",
+        type = "text/css",
+        href = "_SUBrand.SyleSheet.css"
+      ),
+      conductor::useConductor()
     ),
 
     # documentation section ---------------------------------------------------
@@ -62,7 +66,8 @@ ui <- function(request) {
       value = "national_view",
       title = shiny::span(
         bsicons::bs_icon("map"),
-        "National view"
+        "National view",
+        class = "nav-national"
       ) |>
         bslib::tooltip(
           "National-level views of NNHIP data, showing key trends, patterns and progress across all Places.",
@@ -132,7 +137,8 @@ ui <- function(request) {
       value = "place_view",
       title = shiny::span(
         bsicons::bs_icon("pin-map"),
-        "Place view"
+        "Place view",
+        class = "nav-place"
       ) |>
         bslib::tooltip(
           "Place-level views of NNHIP data, showing local patterns, progress and variation across individual Places.",
@@ -141,6 +147,7 @@ ui <- function(request) {
       bslib::page_sidebar(
         # sidebar ----
         sidebar = bslib::sidebar(
+          id = "place_sidebar",
           shiny::div(
             # select a place (always visible)
             shiny::selectizeInput(
@@ -195,7 +202,11 @@ ui <- function(request) {
 
         # main ----
         bslib::card(
-          bslib::card_title(shiny::textOutput(outputId = "place_header")),
+          # bslib::card_title(shiny::textOutput(outputId = "place_header")),
+          shiny::div(
+            id = "place_header_title",
+            bslib::card_title(shiny::textOutput(outputId = "place_header")),
+          ),
           bslib::navset_card_tab(
             id = "place_tabs",
             full_screen = TRUE,
@@ -213,6 +224,19 @@ ui <- function(request) {
             mod_place_submission_ui("place_submission")
           )
         )
+      )
+    ),
+
+    # tour ----
+    bslib::nav_spacer(),
+    bslib::nav_item(
+      bslib::toolbar_input_button(
+        id = "start_tour",
+        label = "Take a tour",
+        show_label = TRUE,
+        icon = bsicons::bs_icon("question-circle"),
+        tooltip = "Take a tour of the dashboard",
+        class = "btn-primary"
       )
     )
   )

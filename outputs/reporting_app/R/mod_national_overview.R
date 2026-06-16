@@ -19,11 +19,13 @@ mod_national_overview_ui <- function(id) {
     bslib::layout_sidebar(
       fillable = TRUE,
       sidebar = bslib::sidebar(
+        id = "national_overview_description",
         open = TRUE,
         width = "400px",
         shiny::includeMarkdown("descriptions/national_overview.md")
       ),
       bslib::card_body(
+        id = "national_overview",
         reactable::reactableOutput(ns("national_table")),
         fill = TRUE
       )
