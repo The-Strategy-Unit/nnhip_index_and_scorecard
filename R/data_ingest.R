@@ -362,7 +362,7 @@ get_submissiontemplate_header <- function(df_raw) {
 #' }
 process_submissiontemplate_data <- function(
   df_raw,
-  suppression_marker = c("*", "", "<5", "-", "<6"),
+  suppression_marker = c("*", "", "<5", "-", "<6", "null"),
   # suppression_marker = c("*", ""),
   filepath = NULL
 ) {
@@ -811,7 +811,7 @@ update_pinned_data_for_month <- function(ms_teams_folder = NULL) {
     purrr::map_dfr(
       .x = reporting_months,
       .f = \(.x) {
-        pin_name = glue::glue("{prefix}{.x}")
+        pin_name <- glue::glue("{prefix}{.x}")
         pins::pin_read(board = board, name = pin_name)
       }
     )
