@@ -37,6 +37,7 @@ Imports:
     png,
     prettyunits,
     purrr,
+    quarto,
     reactable,
     reactablefmtr (>= 2.1.0),
     readxl,
