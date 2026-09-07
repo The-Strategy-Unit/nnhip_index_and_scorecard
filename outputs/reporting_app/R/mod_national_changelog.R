@@ -38,7 +38,8 @@ mod_national_changelog_server <- function(id, df_issues) {
       req(df_issues())
 
       display_issueslog(
-        df_issues = df_issues() |> dplyr::arrange(dplyr::desc(date))
+        df_issues = df_issues() |>
+          dplyr::arrange(dplyr::desc(month), dplyr::desc(date))
       )
     })
   })
