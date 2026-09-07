@@ -1,7 +1,7 @@
-# --- Changelog (National) ----------------------------------------------------
+# --- Changelog (Place) -------------------------------------------------------
 
 # ui ----
-mod_national_changelog_ui <- function(id) {
+mod_place_changelog_ui <- function(id) {
   # set up namespacing
   ns <- shiny::NS(id)
 
@@ -13,7 +13,7 @@ mod_national_changelog_ui <- function(id) {
       "Change log"
     ) |>
       bslib::tooltip(
-        "Record of issues, observations and data-ingestion changes to support learning and transparency.",
+        "Record of Place-level issues, observations and data-ingestion changes to support learning and transparency.",
         options = list(trigger = "hover")
       ),
     bslib::layout_sidebar(
@@ -21,7 +21,7 @@ mod_national_changelog_ui <- function(id) {
       sidebar = bslib::sidebar(
         open = TRUE,
         width = "400px",
-        shiny::includeMarkdown("descriptions/national_changelog.md")
+        shiny::includeMarkdown("descriptions/place_changelog.md")
       ),
       bslib::card_body(
         reactable::reactableOutput(ns("changelog_table")),
@@ -32,13 +32,18 @@ mod_national_changelog_ui <- function(id) {
 }
 
 # server ----
-mod_national_changelog_server <- function(id, df_issues) {
+mod_place_changelog_server <- function(id, df_issues, place) {
   shiny::moduleServer(id, function(input, output, session) {
     output$changelog_table <- reactable::renderReactable({
-      req(df_issues())
+      req(df_issues(), place())
 
+      # get the value from the input
+      place_val <- place()
+
+      # display the result
       display_issueslog(
         df_issues = df_issues() |>
+          dplyr::filter(place_affected == place_val) |>
           dplyr::arrange(dplyr::desc(month), dplyr::desc(date))
       )
     })

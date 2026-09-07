@@ -16,6 +16,7 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports: 
     arrow,
+    AsioHeaders,
     AzureKeyVault,
     AzureStor,
     brand.yml,
@@ -37,6 +38,7 @@ Imports:
     png,
     prettyunits,
     purrr,
+    quarto,
     reactable,
     reactablefmtr (>= 2.1.0),
     readxl,

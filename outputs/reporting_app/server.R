@@ -326,4 +326,12 @@ server <- function(input, output, session) {
       pin_version
     })
   )
+
+  ## place change log ---------------------------------------------------------
+  # module server call
+  mod_place_changelog_server(
+    id = "place_changelog",
+    df_issues = df_issues,
+    place = input_selected_place
+  )
 }

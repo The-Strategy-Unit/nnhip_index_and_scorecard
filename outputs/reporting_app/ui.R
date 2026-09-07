@@ -114,19 +114,19 @@ ui <- function(request) {
         bslib::navset_card_tab(
           id = "national_tabs",
 
-          # overview metrics
+          # overview metrics ----
           mod_national_overview_ui("national_overview"),
 
-          # engagement plot (disabled for now)
+          # engagement plot (disabled for now) ----
           # mod_national_engagement_ui("national_engagement"),
 
-          # demographics plot
+          # demographics plot ----
           mod_national_demographics_ui("national_demographics"),
 
-          # data coverage table
+          # data coverage table ----
           mod_national_coverage_ui("national_coverage"),
 
-          # change / issues table
+          # change / issues table ----
           mod_national_changelog_ui("national_changelog")
         )
       )
@@ -221,7 +221,10 @@ ui <- function(request) {
             mod_place_engagement_ui("place_engagement"),
 
             # submission view table ----
-            mod_place_submission_ui("place_submission")
+            mod_place_submission_ui("place_submission"),
+
+            # change / issues table ----
+            mod_place_changelog_ui("place_changelog")
           )
         )
       )
