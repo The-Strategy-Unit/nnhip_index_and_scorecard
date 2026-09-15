@@ -38,17 +38,18 @@ mod_national_overview_server <- function(
   id,
   df,
   month_current,
-  month_previous
+  month_comparison
 ) {
   shiny::moduleServer(id, function(input, output, session) {
     # code goes here
     output$national_table <- reactable::renderReactable({
-      req(df(), month_current(), month_previous())
+      req(df(), month_current(), month_comparison())
 
       display_dashboard_national(
         df = df(),
         month_latest = month_current(),
-        month_prev = month_previous()
+        # month_prev = month_previous()
+        month_prev = month_comparison()
       )
     })
   })
