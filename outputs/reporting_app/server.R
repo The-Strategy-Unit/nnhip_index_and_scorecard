@@ -175,6 +175,11 @@ server <- function(input, output, session) {
     input$selected_month |> zoo::as.yearmon()
   })
 
+  input_selected_month_national <- shiny::reactive({
+    req(input$selected_month_national)
+    input$selected_month_national |> zoo::as.yearmon()
+  })
+
   input_selected_demographic <- shiny::reactive({
     shiny::req(input$selected_demographic)
     input$selected_demographic
@@ -227,6 +232,23 @@ server <- function(input, output, session) {
     )
   })
 
+  # update the available months in the national overview tab
+  shiny::observe({
+    req(df_months(), national_month_current())
+
+    # exclude the national current month from the options
+    months <- df_months()[!df_months() %in% national_month_current()]
+
+    # update the ui input
+    shiny::updateSelectizeInput(
+      session = session,
+      inputId = "selected_month_national",
+      choices = months |> as.character(), # need to send the labels
+      selected = months |> min() |> as.character(),
+      server = FALSE # important!
+    )
+  })
+
   # update the available demographic splits
   shiny::observe({
     shiny::updateSelectInput(
@@ -247,7 +269,7 @@ server <- function(input, output, session) {
     id = "national_overview",
     df = df,
     month_current = national_month_current,
-    month_previous = national_month_previous
+    month_comparison = input_selected_month_national
   )
 
   ## national engagement plot -------------------------------------------------
