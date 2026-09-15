@@ -88,6 +88,17 @@ ui <- function(request) {
               )
             ),
 
+            # select a month (conditional)
+            shiny::conditionalPanel(
+              condition = "input.national_tabs == 'overview_national'",
+              shiny::selectizeInput(
+                inputId = "selected_month_national",
+                label = "Comparison month:",
+                choices = NULL, # will update this reactively in server.R
+                multiple = FALSE
+              )
+            ),
+
             # bookmark button (conditional)
             shiny::conditionalPanel(
               condition = "input.national_tabs == 'demographics'",
