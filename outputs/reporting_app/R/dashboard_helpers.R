@@ -1745,7 +1745,7 @@ national_monthly_averages <- function(df) {
     dplyr::filter(metric_id != "P1") |>
     dplyr::summarise(
       value = sum(value, na.rm = TRUE),
-      # .by = c(metric_id, metric_details, value_type, month_zoo, month)
+      # place_count_distinct = dplyr::n_distinct(place, na.rm = TRUE),
       .by = c(metric_block, metric_id, value_type, month_zoo, month)
     ) |>
     # work out the rate
@@ -1762,6 +1762,8 @@ national_monthly_averages <- function(df) {
     ) |>
     # remove numerator and denominator from all outcome measures
     dplyr::filter(value_type == "rate_per_1000")
+  # move `place_count_distinct` after `value`
+  # dplyr::relocate("place_count_distinct", .after = "value")
 
   # process metric P1: average number of patients
   df_process <-
@@ -1789,6 +1791,20 @@ national_monthly_averages <- function(df) {
 
   return(df_return)
 }
+
+# national_monthly_place_count <- function(df) {
+#   # filter to total breakdown and remove pre-calculated rates
+#   df_temp <-
+#     df |>
+#     dplyr::filter(
+#       demographic_type == "Total",
+#       value_type != "rate_per_1000" # remove pre-calculated rates
+#     )
+
+#   # get the metric names
+#   df_metric_names <- get_metric_names(df = df, include_p1 = TRUE)
+
+# }
 
 #' Prepare national-level data for funnel plotting
 #'
@@ -1967,6 +1983,9 @@ get_national_dashboard_data <- function(df, month_latest, month_prev) {
       place_outside_limit_rate = n_outside / n_places,
       .by = metric_block
     )
+
+  # get the number of places contributing to each metric
+  # df_place_count <- national_monthly_place_count(df = df)
 
   # get the trendline data
   df_trendline <-
