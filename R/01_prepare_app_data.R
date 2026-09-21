@@ -8,6 +8,21 @@
 #' 3. update the data on the SU's Posit Connect server so it is available for
 #'    the app to use
 #' ----------------------------------------------------------------------------
+#'
+#' NOTE:
+#' issues when running in R 4.6.1 but fine when running R 4.5.3.
+#' Currently unclear whether this is related to newer R version or one of the
+#' dependencies
+#'
+#' Errors reported in R 4.6.1 include:
+#'
+#' (1) ------------------------------------------------------------------------
+#' Failed: "NNHIPDataCollectionTemplatev1.2_Nott_June2026_Final.xlsx" - In argument: `value_numeric = readr::parse_double(x = value, na = suppression_marker)`.
+#'
+#' (2) ------------------------------------------------------------------------
+#' Error in `dplyr::count()` at nnhip_index_and_scorecard/R/data_ingest.R:1071:3:
+#' ! Must group by variables found in `.data`.
+#' ✖ Column `place` is not found.
 
 source(here::here("R", "data_ingest.R"))
 
