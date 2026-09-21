@@ -753,6 +753,7 @@ display_dashboard <- function(df, place_selected, month_latest, month_prev) {
           ),
           month_current = reactable::colDef(
             name = "This month",
+            # name = month_latest |> as.character(),
             format = reactable::colFormat(digits = 1)
           ),
           month_previous = reactable::colDef(
@@ -2002,7 +2003,9 @@ get_national_dashboard_data <- function(df, month_latest, month_prev) {
       by = dplyr::join_by(x$metric_block == y$metric_block)
     ) |>
     # remove `metric_block` as no longer needed
-    dplyr::select(-c(metric_block))
+    dplyr::select(-c(metric_block)) |>
+    # put `month_previous` before `month_current`
+    dplyr::relocate("month_previous", .before = "month_current")
 
   return(df_dashboard)
 }
@@ -2053,12 +2056,12 @@ display_dashboard_national <- function(df, month_latest, month_prev) {
             minWidth = 250,
             maxWidth = 1000
           ),
-          month_current = reactable::colDef(
-            name = "This month",
+          month_previous = reactable::colDef(
+            name = month_prev |> as.character(),
             format = reactable::colFormat(digits = 1)
           ),
-          month_previous = reactable::colDef(
-            name = "Last month",
+          month_current = reactable::colDef(
+            name = month_latest |> as.character() |> glue::glue(" (latest)"),
             format = reactable::colFormat(digits = 1)
           ),
           month_diff = reactable::colDef(
