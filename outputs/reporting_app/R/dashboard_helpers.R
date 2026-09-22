@@ -153,6 +153,38 @@ factorise_columns <- function(df_raw) {
     )
 }
 
+#' Add active engagement flag to the dataset
+#'
+#' @description
+#' Derives monthly engagement measures for each Place and joins them back to
+#' the input dataset.
+#'
+#' Engagement is determined using metric `P1` records where:
+#' - `demographic_type == "Total"`
+#' - `value_type == "count"`
+#'
+#' For each unique Place-month combination, the function creates:
+#' - `flag_actively_engaged` logical indicator denoting whether the reported
+#'   P1 cohort size is non-missing and greater than zero.
+#' - `engagement_num` the reported P1 count for the Place-month
+#'
+#' These derived variables are then left-joined back onto the original dataset
+#' using `place` and `month`.
+#'
+#' @param df A data frame containing NNHIP metrics. Must contain at least the
+#' columns:
+#' - `place`, `month`, `metric_id`, `demographic_type`, `value_type`, `value`
+#'
+#' @details
+#' The engagement summary is calculated from a filtered subset of the input
+#' data and then merged back to all records using a left-join. As a result,
+#' every metric recorded for a given Place-Month receives the same engagement
+#' values.
+#'
+#' @returns Tibble
+#'
+#' @examples
+#' df <- add_active_engagement_columns(df)
 add_active_engagement_columns <- function(df) {
   # get a summary of engagement for each place-month
   df_engagement <-
@@ -188,6 +220,104 @@ add_active_engagement_columns <- function(df) {
       y = df_engagement,
       by = dplyr::join_by(x$place == y$place, x$month == y$month)
     )
+}
+
+#' Add data quality flags to the dataset
+#'
+#' @description
+#' Assesses the completeness and validity of submitted denominator data for
+#' each Place and derives a composite data quality flag.
+#'
+#' A Place is considered to have high-quality data when:
+#' - it has submitted data in all reporting periods, allowing for one missing
+#'   month
+#' - every submitted month contains at least one denominator value greater
+#'   than zero
+#'
+#' The assessment is based only records where:
+#' - `demographic_value == "Total"`
+#' - `value_type == "count"`
+#'
+#' Three flags are generated:
+#' - `flag_place_submission_completeness` logical indicator showing whether a
+#'   Place has submitted data for at least `N - 1` reporting months, where `N`
+#'   is the total number of months in the dataset.
+#' - `flag_place_month_has_data` logical indicator showing whether a given
+#'   Place-month contains at least one denominator value greater than zero.
+#' - `flag_high_dq` logical indicator showing whether both data quality
+#'   criteria are met at Place level.
+#'
+#' The flags are calculated at Place-month level and then left-joined back to
+#' the original dataset so that all records for a given Place-month inherit the
+#' same data quality indicators.
+#'
+#' @param df A data frame
+#'
+#' @returns A data frame containing all the original columns plus:
+#' - `flag_place_submission_completeness` place-level submission flag
+#' - `flag_place_month_has_data` place-month denominator validity flag
+#' - `flag_high_dq` overall place-level data quality flag. Places not represented
+#'   in the assessment subset are assigned `FALSE`.
+#'
+#' @details
+#' Data quality is assessed using denominator records only.
+#'
+#' @export
+add_data_quality_flag <- function(df) {
+  # flag Places that meet 'good quality data' flag -------------------------
+  # 1. submissions >= months - 1
+  # 2. every submitted month contains at least one denominator > 0
+
+  # count the number of months in the data
+  n_months <- dplyr::n_distinct(df$month, na.rm = TRUE)
+
+  # calculate the dq flags
+  df_dq_flag <-
+    df |>
+    dplyr::filter(
+      demographic_value == "Total", # limit to the 'total' measures
+      value_type == "count", # limit to denominators
+    ) |>
+    # flag Places that have submitted each month (with 1 month leeway)
+    dplyr::mutate(
+      flag_place_submission_completeness = dplyr::n_distinct(month) >=
+        n_months - 1,
+      .by = place
+    ) |>
+    # flag if each Place:month has at least one non-null denominator (i.e. actual data)
+    dplyr::mutate(
+      flag_place_month_has_data = any(
+        dplyr::coalesce(value, 0) > 0,
+        na.rm = TRUE
+      ),
+      .by = c(place, month)
+    ) |>
+    # flag the whole Place if meets both component criteria
+    dplyr::mutate(
+      flag_high_dq = all(flag_place_submission_completeness) &
+        all(flag_place_month_has_data),
+      .by = place
+    ) |>
+    # limit to essential fields and distinct
+    dplyr::distinct(
+      place,
+      month,
+      flag_place_submission_completeness,
+      flag_place_month_has_data,
+      flag_high_dq
+    )
+
+  # add the flags to the outgoing tibble
+  df_out <-
+    df |>
+    dplyr::left_join(
+      y = df_dq_flag,
+      by = c("place", "month")
+    ) |>
+    # catch any places which were removed by filters
+    tidyr::replace_na(list(flag_high_dq = FALSE))
+
+  return(df_out)
 }
 
 # General functions -----------------------------------------------------------
@@ -1344,6 +1474,18 @@ get_data_for_engagement_table <- function(df) {
     dplyr::mutate(engagement_rate = engagement_num / patients_latest) |>
     dplyr::select(place, engagement_rate)
 
+  # finally add a dq flag
+  part4_dq_flag <-
+    df |>
+    dplyr::distinct(place, dq = flag_high_dq) |>
+    dplyr::mutate(
+      dq = dplyr::if_else(
+        condition = dq,
+        true = "⭐",
+        false = ""
+      )
+    )
+
   # combine the components to the output
   tibble::tibble(place = expected_places) |>
     # add in the cohort size
@@ -1360,7 +1502,13 @@ get_data_for_engagement_table <- function(df) {
     dplyr::left_join(
       y = part3_engagement_rate,
       by = dplyr::join_by(x$place == y$place)
-    )
+    ) |>
+    # add in the data quality flag
+    dplyr::left_join(
+      y = part4_dq_flag,
+      by = dplyr::join_by(x$place == y$place)
+    ) |>
+    dplyr::relocate(dq, .before = place)
 }
 
 #' Render the place-level engagement reactable table
@@ -1417,6 +1565,12 @@ display_engagement_table <- function(df, place_highlight = NULL) {
 
       # column formating
       columns = list(
+        dq = reactable::colDef(
+          sticky = "left",
+          header = "DQ",
+          maxWidth = 50
+        ),
+
         place = reactable::colDef(
           sticky = "left",
           header = "Place",
@@ -2211,6 +2365,22 @@ display_national_data_coverage_table <- function(df) {
       values_fill = ""
     )
 
+  # add a dq flag
+  submission_status <-
+    submission_status |>
+    dplyr::left_join(
+      y = df |> dplyr::distinct(place, dq = flag_high_dq),
+      by = c("place")
+    ) |>
+    dplyr::relocate(dq, .before = place) |>
+    dplyr::mutate(
+      dq = dplyr::if_else(
+        condition = dq,
+        true = "⭐",
+        false = ""
+      )
+    )
+
   # render with reactable
   reactable::reactable(
     data = submission_status,
@@ -2223,6 +2393,11 @@ display_national_data_coverage_table <- function(df) {
       minWidth = 45
     ),
     columns = list(
+      dq = reactable::colDef(
+        sticky = "left",
+        name = "DQ",
+        maxWidth = 50
+      ),
       place = reactable::colDef(sticky = "left", name = "Place", minWidth = 200)
     ),
     theme = reactable::reactableTheme(

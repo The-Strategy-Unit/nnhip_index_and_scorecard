@@ -39,17 +39,16 @@ mod_national_demographics_server <- function(
   id,
   df,
   selected_demographic,
-  df_version
+  df_version,
+  hq_flag
 ) {
   shiny::moduleServer(id, function(input, output, session) {
-    # shiny::req(df(), selected_demographic(), df_version())
-
     # get the data, cached for df_version and demographic
     plot_data <- shiny::reactive({
       shiny::req(df(), df_version())
       get_data_for_demographic_split(df = df())
     }) |>
-      shiny::bindCache(df_version())
+      shiny::bindCache(df_version(), hq_flag())
 
     # update the plot
     output$demographics_plot <- plotly::renderPlotly({
