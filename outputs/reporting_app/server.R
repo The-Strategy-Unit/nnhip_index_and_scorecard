@@ -58,7 +58,9 @@ server <- function(input, output, session) {
       # prepare columns for use in select inputs
       factorise_columns() |>
       # indicate whether place-month has record of engagement with target cohort
-      add_active_engagement_columns()
+      add_active_engagement_columns() |>
+      # add data quality flags to places
+      add_data_quality_flag()
   })
 
   # derived lists for UI inputs -----------------------------------------------
