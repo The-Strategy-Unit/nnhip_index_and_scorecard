@@ -2341,6 +2341,22 @@ display_national_data_coverage_table <- function(df) {
       values_fill = ""
     )
 
+  # add a dq flag
+  submission_status <-
+    submission_status |>
+    dplyr::left_join(
+      y = df |> dplyr::distinct(place, dq = flag_high_dq),
+      by = c("place")
+    ) |>
+    dplyr::relocate(dq, .before = place) |>
+    dplyr::mutate(
+      dq = dplyr::if_else(
+        condition = dq,
+        true = "⭐",
+        false = ""
+      )
+    )
+
   # render with reactable
   reactable::reactable(
     data = submission_status,
@@ -2353,6 +2369,11 @@ display_national_data_coverage_table <- function(df) {
       minWidth = 45
     ),
     columns = list(
+      dq = reactable::colDef(
+        sticky = "left",
+        name = "DQ",
+        maxWidth = 50
+      ),
       place = reactable::colDef(sticky = "left", name = "Place", minWidth = 200)
     ),
     theme = reactable::reactableTheme(
