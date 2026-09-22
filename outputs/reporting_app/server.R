@@ -50,7 +50,8 @@ server <- function(input, output, session) {
     req(df_raw())
 
     # process the data to make it ready for use in the app
-    df_raw() |>
+    df_return <-
+      df_raw() |>
       # ensure there is a consistent 'metric' for each block of values
       add_metric_column_to_df() |>
       # ensure counts below threshold are suppressed
@@ -61,6 +62,22 @@ server <- function(input, output, session) {
       add_active_engagement_columns() |>
       # add data quality flags to places
       add_data_quality_flag()
+
+    return(df_return)
+  })
+
+  # prepare the national data, depending on whether HQ places are required
+  df_national <- shiny::reactive({
+    req(df())
+
+    df_return <-
+      if (input_selected_quality_national()) {
+        df() |> dplyr::filter(flag_high_dq == TRUE)
+      } else {
+        df()
+      }
+
+    return(df_return)
   })
 
   # derived lists for UI inputs -----------------------------------------------
@@ -116,9 +133,9 @@ server <- function(input, output, session) {
 
   # list of months for the national views
   national_months <- shiny::reactive({
-    req(df())
+    req(df_national())
 
-    df() |>
+    df_national() |>
       dplyr::pull(month_zoo) |>
       unique() |>
       sort() |>
@@ -185,6 +202,10 @@ server <- function(input, output, session) {
   input_selected_demographic <- shiny::reactive({
     shiny::req(input$selected_demographic)
     input$selected_demographic
+  })
+
+  input_selected_quality_national <- shiny::reactive({
+    isTRUE(input$national_high_quality_data_places)
   })
 
   # ui observers --------------------------------------------------------------
@@ -269,26 +290,27 @@ server <- function(input, output, session) {
   ## national dashboard -------------------------------------------------------
   mod_national_overview_server(
     id = "national_overview",
-    df = df,
+    df = df_national,
     month_current = national_month_current,
     month_comparison = input_selected_month_national
+  )
+
+  ## national demographic splits ----------------------------------------------
+  mod_national_demographics_server(
+    id = "national_demographics",
+    df = df_national,
+    selected_demographic = input_selected_demographic,
+    hq_flag = input_selected_quality_national,
+    df_version = shiny::reactive({
+      shiny::req(pin_version)
+      pin_version
+    })
   )
 
   ## national engagement plot -------------------------------------------------
   mod_national_engagement_server(
     id = "national_engagement",
     df = df
-  )
-
-  ## national demographic splits ----------------------------------------------
-  mod_national_demographics_server(
-    id = "national_demographics",
-    df = df,
-    selected_demographic = input_selected_demographic,
-    df_version = shiny::reactive({
-      shiny::req(pin_version)
-      pin_version
-    })
   )
 
   ## national data coverage ---------------------------------------------------
