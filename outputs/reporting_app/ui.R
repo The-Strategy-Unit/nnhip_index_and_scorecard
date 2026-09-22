@@ -77,15 +77,18 @@ ui <- function(request) {
         # sidebar ----
         sidebar = bslib::sidebar(
           shiny::div(
-            # select a demographic (conditional)
+            # toggle high-quality data places
             shiny::conditionalPanel(
-              condition = "input.national_tabs == 'demographics'",
-              shiny::selectizeInput(
-                inputId = "selected_demographic",
-                label = "Demographic:",
-                choices = NULL, # will update this reactively in server.R
-                multiple = FALSE
-              )
+              condition = "input.national_tabs == 'overview_national' || input.national_tabs == 'demographics'",
+              bslib::input_switch(
+                id = "national_high_quality_data_places",
+                label = "High-quality data only",
+                value = FALSE # off by default
+              ) |>
+                bslib::tooltip(
+                  "A Place is considered high quality if it submitted data in all reporting months (allowing one missing month) and every submitted month contains at least one valid denominator value greater than zero.",
+                  options = list(trigger = "hover")
+                )
             ),
 
             # select a month (conditional)
@@ -99,9 +102,20 @@ ui <- function(request) {
               )
             ),
 
-            # bookmark button (conditional)
+            # select a demographic (conditional)
             shiny::conditionalPanel(
               condition = "input.national_tabs == 'demographics'",
+              shiny::selectizeInput(
+                inputId = "selected_demographic",
+                label = "Demographic:",
+                choices = NULL, # will update this reactively in server.R
+                multiple = FALSE
+              )
+            ),
+
+            # bookmark button (conditional)
+            shiny::conditionalPanel(
+              condition = "input.national_tabs == 'overview_national' || input.national_tabs == 'demographics'",
               shiny::bookmarkButton(label = "Bookmark", width = "100%"),
             ),
 
