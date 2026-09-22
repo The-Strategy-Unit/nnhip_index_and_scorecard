@@ -1474,6 +1474,18 @@ get_data_for_engagement_table <- function(df) {
     dplyr::mutate(engagement_rate = engagement_num / patients_latest) |>
     dplyr::select(place, engagement_rate)
 
+  # finally add a dq flag
+  part4_dq_flag <-
+    df |>
+    dplyr::distinct(place, dq = flag_high_dq) |>
+    dplyr::mutate(
+      dq = dplyr::if_else(
+        condition = dq,
+        true = "⭐",
+        false = ""
+      )
+    )
+
   # combine the components to the output
   tibble::tibble(place = expected_places) |>
     # add in the cohort size
@@ -1490,7 +1502,13 @@ get_data_for_engagement_table <- function(df) {
     dplyr::left_join(
       y = part3_engagement_rate,
       by = dplyr::join_by(x$place == y$place)
-    )
+    ) |>
+    # add in the data quality flag
+    dplyr::left_join(
+      y = part4_dq_flag,
+      by = dplyr::join_by(x$place == y$place)
+    ) |>
+    dplyr::relocate(dq, .before = place)
 }
 
 #' Render the place-level engagement reactable table
@@ -1547,6 +1565,12 @@ display_engagement_table <- function(df, place_highlight = NULL) {
 
       # column formating
       columns = list(
+        dq = reactable::colDef(
+          sticky = "left",
+          header = "DQ",
+          maxWidth = 50
+        ),
+
         place = reactable::colDef(
           sticky = "left",
           header = "Place",
