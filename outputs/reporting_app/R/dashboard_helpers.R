@@ -2876,7 +2876,6 @@ get_data_for_national_spaghetti_plot <- function(
     dplyr::filter(
       demographic_type == "Total",
       metric == metric_selected,
-      # metric_block == selected_metric_block
     ) |>
     # prepare some fields for plotting
     dplyr::mutate(
@@ -2900,7 +2899,7 @@ get_data_for_national_spaghetti_plot <- function(
   df_p <-
     df_m |>
     # get the reported rates
-    dplyr::filter(value_type == "rate_per_1000", ) |>
+    dplyr::filter(value_type == "rate_per_1000") |>
     # need to arrange chronologically for {plotly} to show lines correctly
     dplyr::arrange(place, month_dt)
 
@@ -2957,7 +2956,6 @@ get_data_for_national_spaghetti_plot <- function(
 
   # compile the data for returning
   list_return <- list(
-    # "df_m" = df_m,
     "df_p" = df_p,
     "df_national_pop_weighted_mean" = df_national_pop_weighted_mean,
     "df_national_median_iqr" = df_national_median_iqr
@@ -3066,23 +3064,11 @@ get_data_for_national_spaghetti_plot <- function(
 #' - An optional median trace
 #' - An optional inter-quartile range ribbon
 #' - Interactive hover functionality
-#'
-#' @export
-#' @examples
 display_national_spaghetti_plot <- function(
-  # df,
-  # # selected_metric_block = 1,
-  # metric_selected,
   data_list = NULL,
   show_mean = FALSE,
   show_median_iqr = FALSE
 ) {
-  # # prepare the data
-  # data_list <- get_data_for_national_spaghetti_plot(
-  #   df = df,
-  #   selected_metric_block = selected_metric_block
-  # )
-
   # get a title for the chart (ensure it fits in the plot area)
   str_title <- data_list$df_p |>
     dplyr::pull(metric_details) |>
