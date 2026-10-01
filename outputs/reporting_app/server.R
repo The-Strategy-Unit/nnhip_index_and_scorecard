@@ -27,6 +27,12 @@ server <- function(input, output, session) {
       pins::pin_meta(board = board, name = pin_name)$version
     })
 
+    # make the pin version reactable ... again - not sure why required, but works
+    pin_version_r <- shiny::reactive({
+      shiny::req(pin_version)
+      pin_version
+    })
+
     # read the pin created date for data age
     pin_time <- shiny::reactive({
       # check for updates to the time each hour
@@ -208,6 +214,14 @@ server <- function(input, output, session) {
     isTRUE(input$national_high_quality_data_places)
   })
 
+  input_selected_show_mean <- shiny::reactive({
+    isTRUE(input$national_spaghetti_mean)
+  })
+
+  input_selected_show_median <- shiny::reactive({
+    isTRUE(input$national_spaghetti_median)
+  })
+
   # ui observers --------------------------------------------------------------
   shiny::observeEvent(input$start_tour, {
     # test - conductor
@@ -301,16 +315,24 @@ server <- function(input, output, session) {
     df = df_national,
     selected_demographic = input_selected_demographic,
     hq_flag = input_selected_quality_national,
-    df_version = shiny::reactive({
-      shiny::req(pin_version)
-      pin_version
-    })
+    df_version = pin_version_r
   )
 
   ## national engagement plot -------------------------------------------------
   mod_national_engagement_server(
     id = "national_engagement",
     df = df
+  )
+
+  ## national spaghetti plot --------------------------------------------------
+  mod_national_spaghetti_server(
+    id = "national_spaghetti",
+    df = df_national,
+    flag_hq = input_selected_quality_national,
+    metric = input_selected_metric,
+    show_mean = input_selected_show_mean,
+    show_median = input_selected_show_median,
+    df_version = pin_version_r
   )
 
   ## national data coverage ---------------------------------------------------
@@ -346,10 +368,7 @@ server <- function(input, output, session) {
     place = input_selected_place,
     metric = input_selected_metric,
     month = input_selected_month,
-    df_version = shiny::reactive({
-      req(pin_version)
-      pin_version
-    })
+    df_version = pin_version_r
   )
 
   ## place engagement table ---------------------------------------------------
@@ -367,10 +386,7 @@ server <- function(input, output, session) {
     df = df,
     place = input_selected_place,
     month = input_selected_month,
-    pin_version = shiny::reactive({
-      req(pin_version)
-      pin_version
-    })
+    pin_version = pin_version_r
   )
 
   ## place change log ---------------------------------------------------------
