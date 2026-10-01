@@ -2828,3 +2828,349 @@ display_demographic_split_chart <- function(
   # return the plot
   return(p)
 }
+
+#' Prepare data for the national spaghetti plot
+#'
+#' @description
+#' Prepares and summarises data required by `display_national_spaghetti_plot()`.
+#'
+#' The function filters the supplied dataset to a single metric, generates
+#' Place-level plotting data, calculates a population-weighted national mean,
+#' and calculates monthly median and inter-quartile range statistics.
+#'
+#' Separating data preparation from visualisation supports caching, improves
+#' maintainability and allows the calculated summaries to be reused by multiple
+#' dashboard components.
+#'
+#' @param df A tibble containing metric submission data
+#' @param selected_metric_block Integer identifying the metric block to prepare.
+#'
+#' @returns
+#' A named list containing:
+#' - `df_p`: Place-level rate data for use in the spaghetti plot
+#' - `df_national_pop_weighted_mean`: Monthly population-weighted national rates
+#' - `df_national_median_iqr`: Monthly median and inter-quartile range statistics
+#'
+#' @details
+#' The returned datasets are intended to support the visualisation of:
+#' - individual Place trajectories
+#' - national population-weighted averages
+#' - national median rates
+#' - inter-quartile range benchmark bands
+#'
+#' The population-weighted rate is calculated as:
+#' `(sum(numerator) / sum(denominator)) * 1000`
+#'
+#' ensuring that Places contribute proportionally according to their denominator
+#' population.
+#'
+#' Quartiles are calculated from Place-level rates using `quantile(type = 7)`
+get_data_for_national_spaghetti_plot <- function(
+  df,
+  # selected_metric_block = 1
+  metric_selected
+) {
+  # data minimisation
+  df_m <-
+    df |>
+    dplyr::filter(
+      demographic_type == "Total",
+      metric == metric_selected,
+      # metric_block == selected_metric_block
+    ) |>
+    # prepare some fields for plotting
+    dplyr::mutate(
+      caseload = dplyr::first(value[value_type == "patients"]) |>
+        scales::number(big.mark = ","),
+      engagement_num = dplyr::coalesce(engagement_num, 0),
+      .by = c(place, month_zoo)
+    ) |>
+    dplyr::mutate(
+      month_dt = zoo::as.Date(month_zoo),
+      hover_label = glue::glue(
+        "<b>{place}</b>
+          {month_zoo}
+          Rate: {scales::number(x = value, accuracy = 0.1)} per 1,000
+          Caseload: {engagement_num} of {caseload}
+          "
+      )
+    )
+
+  # prepare the data for plotting
+  df_p <-
+    df_m |>
+    # get the reported rates
+    dplyr::filter(value_type == "rate_per_1000", ) |>
+    # need to arrange chronologically for {plotly} to show lines correctly
+    dplyr::arrange(place, month_dt)
+
+  # prepare the national average
+  df_national_pop_weighted_mean <-
+    df_m |>
+    dplyr::summarise(
+      numerator = sum(value[value_type == "count"]) |> dplyr::coalesce(0),
+      denominator = sum(value[value_type == "patients"]) |>
+        dplyr::coalesce(0),
+      .by = c(place, month_zoo, month_dt, metric_block)
+    ) |>
+    # remove entries where the denominator is zero
+    dplyr::filter(!is.na(denominator), denominator > 0) |>
+    # aggregate up per month and metric to get a national view
+    dplyr::summarise(
+      numerator = sum(numerator),
+      denominator = sum(denominator),
+      .by = c(month_zoo, month_dt, metric_block)
+    ) |>
+    # calculate the rate
+    dplyr::mutate(
+      rate = (numerator / denominator) * 1000,
+      hover_label = glue::glue(
+        "<b>Population-weighted mean</b>
+        {month_zoo}
+        Rate: {scales::number(x = rate, accuracy = 0.1)} per 1,000
+        {scales::number(x = numerator, big.mark = ',')} / {scales::number(x = denominator, big.mark = ',')}"
+      )
+    ) |>
+    # sort chronologically
+    dplyr::arrange(month_dt)
+
+  # prepare the national median and iqr
+  df_national_median_iqr <-
+    df_m |>
+    dplyr::filter(value_type == "rate_per_1000") |>
+    dplyr::summarise(
+      median = median(x = value, na.rm = TRUE),
+      q25 = quantile(x = value, prob = 0.25, na.rm = TRUE, type = 7),
+      q75 = quantile(x = value, prob = 0.75, na.rm = TRUE, type = 7),
+      .by = c(month_dt, month_zoo, metric_block)
+    ) |>
+    dplyr::mutate(
+      hover_label = glue::glue(
+        "<b>Median and inter-quartile range</b>
+          {month_zoo}
+          Rate: {scales::number(x = median, accuracy = 0.1)} per 1,000,
+          IQR: ({scales::number(q25, accuracy = 1)}, {scales::number(q75, accuracy = 1)})"
+      )
+    ) |>
+    # sort chronologically
+    dplyr::arrange(month_dt)
+
+  # compile the data for returning
+  list_return <- list(
+    # "df_m" = df_m,
+    "df_p" = df_p,
+    "df_national_pop_weighted_mean" = df_national_pop_weighted_mean,
+    "df_national_median_iqr" = df_national_median_iqr
+  )
+
+  return(list_return)
+}
+
+#' Display a national spaghetti plot for NNHIP metrics
+#'
+#' @description
+#' Creates an interactive Plotly spaghetti plot showing monthly Place-level
+#' rates alongside optional national benchmark overlays. The visual is intended
+#' to support exploration of variation, trends and benchmarking across NNHIP
+#' participating Places.
+#'
+#' @section Visual design:
+#' - Individual Places are shown as faint gray trajectories to provide context
+#'   without dominating the display
+#' - The optional population-weighted mean is displayed as a prominent blue line
+#'   with markers
+#' - The optional median is displayed as a prominent amber line
+#' - The inter-quartile range is displayed as a semi-transparent shaded ribbon
+#'   spanning the 25th to 75th percentiles.
+#'
+#' This approach enables viewers to assess:
+#' - overall national trends
+#' - variation between Places
+#' - whether individual Places fall within the typical range of performance
+#'   observed nationally
+#'
+#' @section Hover information:
+#' Place-level hover labels include:
+#' - Place name
+#' - reporting month
+#' - rate per 1,000 patients
+#' - engagement and caseload values
+#'
+#' When enabled, national benchmark overlays provide bespoke hover text
+#' describing the summary statistic being displayed together with the relevant
+#' numerator, denominator, median or quartile values.
+#'
+#' Hover interactions are disabled for the IQR ribbon to improve usability and
+#' prevent the ribbon obscuring hover events associated with the median line.
+#'
+#' @section Assumptions:
+#' The function assumes that:
+#' - reported rates are supplied per 1,000 patients
+#' - Each Place contributes at most one value for each metric, month and value
+#'   type combination
+#' - Numerators are stored using `value_type == "count"`
+#' - Denominators are stored using `value_type == "patients"`
+#' - Reporting months are stored as `zoo::yearmon` objects
+#'
+#' @param df A tibble containing metric submission data. The dataset is
+#' expected to contain the following variables:
+#' - `place`
+#' - `month_zoo`
+#' - `metric_block`
+#' - `metric_details`
+#' - `value`
+#' - `value_type`
+#' - `engagement_num`
+#' - `demographic_type`
+#'
+#' @param selected_metric_block Integer identifying the metric block to be
+#' displayed. Defaults to `1`.
+#' @param show_mean Logical indicating whether a national population-weighted
+#' mean should be displayed. Defaults to `FALSE`
+#' @param show_median_iqr Logical indicating whether the national median and
+#' inter-quartile range (IQR) should be displayed. Defaults to `FALSE`.
+#'
+#' @details
+#' The base visual consists of a spaghetti plot showing the monthly rate per
+#' 1,000 patients for each Place.
+#'
+#' Place trajectories are displayed as low-opacity grey lines to emphasise
+#' overall trends and variation whilst avoiding visual clutter.
+#'
+#' When `show_mean = TRUE`, a national population-weighted mean rate is
+#' overlaid. This is calculated by aggregating reported numerators and
+#' denominators across Places and calculating:
+#' `(sum(numerator) / sum(denominator)) * 1000`.
+#'
+#' This approach ensures that larger Place populations contribute
+#' proportionately to the national estimate.
+#'
+#' When `show_median_iqr = TRUE`, the median Place rate is displayed as a
+#' highlighted line together with an inter-quartile range ribbon spanning the
+#' 25th and 75th percentiles.
+#'
+#' The chart includes interactive hover labels providing contextual information
+#' for each Place-month observation, including Place name, reporting period,
+#' reported rate and caseload.
+#'
+#' Dates are converted from `zoo::yearmon` format to `Date` objects to support
+#' Plotly date-axis formatting and ensure correct chronological line rendering.
+#'
+#' @returns
+#' A Plotly htmlwidget object suitable for rendering within a Shiny application,
+#' Quarto document or R Markdown report.
+#'
+#' The returned object contains:
+#' - One line trace per Place
+#' - An optional population-weighted mean trace
+#' - An optional median trace
+#' - An optional inter-quartile range ribbon
+#' - Interactive hover functionality
+#'
+#' @export
+#' @examples
+display_national_spaghetti_plot <- function(
+  # df,
+  # # selected_metric_block = 1,
+  # metric_selected,
+  data_list = NULL,
+  show_mean = FALSE,
+  show_median_iqr = FALSE
+) {
+  # # prepare the data
+  # data_list <- get_data_for_national_spaghetti_plot(
+  #   df = df,
+  #   selected_metric_block = selected_metric_block
+  # )
+
+  # get a title for the chart (ensure it fits in the plot area)
+  str_title <- data_list$df_p |>
+    dplyr::pull(metric_details) |>
+    dplyr::first(default = "Metric") |>
+    stringr::str_wrap(width = 100) |>
+    stringr::str_replace_all(pattern = "\n", replacement = "<br>")
+
+  # plotting
+  p <- plotly::plot_ly() |>
+    plotly::add_trace(
+      data = data_list$df_p,
+      x = ~month_dt,
+      y = ~value,
+      split = ~place,
+      name = "Place",
+      type = "scatter",
+      mode = "lines",
+      text = ~hover_label,
+      hoverinfo = "text",
+      line = list(color = "rgba(53, 59, 72, 0.1)")
+    )
+
+  # add mean if requested ----
+  if (show_mean == TRUE) {
+    # add elements to the plot
+    p <- p |>
+      plotly::add_trace(
+        data = data_list$df_national_pop_weighted_mean,
+        x = ~month_dt,
+        y = ~rate,
+        name = "Population-weighted mean",
+        type = "scatter",
+        mode = "lines+markers",
+        line = list(color = "rgba(39, 60, 117, 0.9)", width = 4),
+        marker = list(size = 10, color = "rgba(25, 42, 86, 1.0)"),
+        text = ~hover_label,
+        hoverinfo = "text"
+      )
+  }
+
+  # add median and iqr if requested ----
+  if (show_median_iqr == TRUE) {
+    # add elements to the plot
+    p <- p |>
+      # add the iqr ribbon
+      plotly::add_ribbons(
+        data = data_list$df_national_median_iqr,
+        x = ~month_dt,
+        ymin = ~q25,
+        ymax = ~q75,
+        name = "Median",
+        line = list(width = 0),
+        fillcolor = "rgba(251, 197, 49, 0.2)",
+        hoverinfo = "skip"
+      ) |>
+      # add the median
+      plotly::add_trace(
+        data = data_list$df_national_median_iqr,
+        x = ~month_dt,
+        y = ~median,
+        type = "scatter",
+        mode = "lines+markers",
+        line = list(color = "rgba(251, 197, 49, 0.9)", width = 4),
+        marker = list(size = 10, color = "rgba(225, 177, 44, 1.0)"),
+        text = ~hover_label,
+        hoverinfo = "text"
+      )
+  }
+
+  # add some formatting
+  p <- p |>
+    plotly::layout(
+      xaxis = list(
+        title = "Reporting month",
+        tickformat = "%b %Y",
+        dtick = "M1"
+      ),
+      yaxis = list(
+        title = "Rate per 1,000",
+        zeroline = FALSE
+      ),
+      title = list(text = str_title),
+      font = list(family = "Roboto, Arial, sans-serif", size = 16),
+      showlegend = FALSE,
+      margin = list(l = 40, r = 40, t = 100, b = 60)
+    ) |>
+    plotly::config(displaylogo = FALSE)
+
+  # return the plot
+  return(p)
+}
