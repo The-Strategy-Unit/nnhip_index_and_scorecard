@@ -79,7 +79,7 @@ ui <- function(request) {
           shiny::div(
             # toggle high-quality data places
             shiny::conditionalPanel(
-              condition = "input.national_tabs == 'overview_national' || input.national_tabs == 'demographics'",
+              condition = "input.national_tabs == 'overview_national' || input.national_tabs == 'demographics' || input.national_tabs == 'national_spaghetti'",
               bslib::input_switch(
                 id = "national_high_quality_data_places",
                 label = "High-quality data only",
@@ -111,6 +111,38 @@ ui <- function(request) {
                 choices = NULL, # will update this reactively in server.R
                 multiple = FALSE
               )
+            ),
+
+            # select a metric (conditional)
+            shiny::conditionalPanel(
+              condition = "input.national_tabs == 'national_spaghetti'",
+              # metric select
+              shiny::selectizeInput(
+                inputId = "selected_metric",
+                label = "Metric:",
+                choices = NULL, # will update this reactively in server.R
+                multiple = FALSE
+              ),
+              # show population-weighted mean control
+              bslib::input_switch(
+                id = "national_spaghetti_mean",
+                label = "Show national mean",
+                value = FALSE # off by default
+              ) |>
+                bslib::tooltip(
+                  "Show the national population-weighted mean rate across all Places.",
+                  options = list(trigger = "hover")
+                ),
+              # show median and iqr control
+              bslib::input_switch(
+                id = "national_spaghetti_median",
+                label = "Show median and IQR",
+                value = FALSE # off by default
+              ) |>
+                bslib::tooltip(
+                  "Show the median Place rate and the inter-quartile range (IQR).",
+                  options = list(trigger = "hover")
+                )
             ),
 
             # bookmark button (conditional)
@@ -147,6 +179,9 @@ ui <- function(request) {
 
           # demographics plot ----
           mod_national_demographics_ui("national_demographics"),
+
+          # spaghetti plot ----
+          mod_national_spaghetti_ui("national_spaghetti"),
 
           # data coverage table ----
           mod_national_coverage_ui("national_coverage"),
