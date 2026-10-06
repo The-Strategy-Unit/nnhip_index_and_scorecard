@@ -118,7 +118,7 @@ ui <- function(request) {
               condition = "input.national_tabs == 'national_spaghetti'",
               # metric select
               shiny::selectizeInput(
-                inputId = "selected_metric",
+                inputId = "selected_metric_national",
                 label = "Metric:",
                 choices = NULL, # will update this reactively in server.R
                 multiple = FALSE
@@ -220,7 +220,8 @@ ui <- function(request) {
 
             # select a metric (conditional)
             shiny::conditionalPanel(
-              condition = "input.place_tabs == 'funnel_plot'",
+              condition = "input.place_tabs == 'funnel_plot' || input.place_tabs == 'spaghetti_plot'",
+              # condition = "input.place_tabs == 'funnel_plot'",
               shiny::selectizeInput(
                 inputId = "selected_metric",
                 label = "Metric:",
@@ -238,6 +239,65 @@ ui <- function(request) {
                 choices = NULL, # will update this reactively in server.R
                 multiple = FALSE
               )
+            ),
+
+            # spaghetti plot-related switches
+            shiny::conditionalPanel(
+              condition = "input.place_tabs == 'spaghetti_plot'",
+              bslib::input_switch(
+                id = "show_matched_comparison",
+                label = "Show matched comparison",
+                value = FALSE
+              ) |>
+                bslib::tooltip(
+                  "Display rates for a matched high-frailty population with similar age and deprivation characteristics. Intended as context rather than a counterfactual.",
+                  options = list(trigger = "hover")
+                ),
+              bslib::input_switch(
+                id = "show_similar_trajectories",
+                label = "Show similar trajectories",
+                value = FALSE
+              ) |>
+                bslib::tooltip(
+                  "Display Places whose trends over time are most similar to the selected Place.",
+                  options = list(trigger = "hover")
+                ),
+              bslib::input_switch(
+                id = "show_places",
+                label = "Show all Places",
+                value = FALSE
+              ) |>
+                bslib::tooltip(
+                  "Display all participating Places as faint background trajectories.",
+                  options = list(trigger = "hover")
+                ),
+              bslib::input_switch(
+                id = "show_engagement_month",
+                label = "Show engagement period",
+                value = FALSE
+              ) |>
+                bslib::tooltip(
+                  "Highlight the period following the first month in which the Place reported actively engaging with its cohort.",
+                  options = list(trigger = "hover")
+                ),
+              bslib::input_switch(
+                id = "place_spaghetti_mean",
+                label = "Show national mean",
+                value = FALSE
+              ) |>
+                bslib::tooltip(
+                  "Display the national population-weighted mean rate across all Places.",
+                  options = list(trigger = "hover")
+                ),
+              bslib::input_switch(
+                id = "place_spaghetti_median",
+                label = "Show median and IQR",
+                value = FALSE
+              ) |>
+                bslib::tooltip(
+                  "Display the national median rate and the middle 50% of Place values.",
+                  options = list(trigger = "hover")
+                )
             ),
 
             # bookmark button
@@ -276,6 +336,9 @@ ui <- function(request) {
 
             # funnel plot ----
             mod_place_funnel_ui("place_funnel"),
+
+            # spaghetti plot ---
+            mod_place_spaghetti_ui("place_spaghetti"),
 
             # engagement table ----
             mod_place_engagement_ui("place_engagement"),
