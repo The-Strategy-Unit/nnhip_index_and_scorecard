@@ -18,7 +18,7 @@ Hovering over a line displays additional information including:
 - Engagement count
 - Caseload
 
-### 🔛 Population-weighted mean
+### Population-weighted mean
 
 An optional **population-weighted mean** overlay can be enabled to show the overall national trend.
 
@@ -28,7 +28,7 @@ Because the calculation uses the combined population, larger Places contribute p
 
 The population-weighted mean is shown as a highlighted blue line.
 
-### 🔛 Median and inter-quartile range
+### Median and inter-quartile range
 
 An optional **median and inter-quartile range (IQR)** overlay can also be enabled.
 
@@ -40,7 +40,7 @@ These summaries are not targets or benchmarks. They simply help describe how val
 
 The median is shown as an amber line and the IQR is shown as a shaded amber ribbon.
 
-### 🔛 High-quality data toggle
+### High-quality data toggle
 
 When enabled, the chart uses only Places that meet the dashboard's data quality criteria. A Place is considered to have high-quality data if it:
 
@@ -51,7 +51,7 @@ This allows you to compare metrics derived from all available submissions with m
 
 When the toggle is disabled, all available Places are included.
 
-### How to interpret variation
+## How to interpret variation
 
 Variation between Places should be interpreted carefully.
 
@@ -65,7 +65,7 @@ The chart is therefore best used to:
 - Generate questions and hypotheses for further investigation
 - Provide context for other benchmarking and analytical views within the dashboard
 
-### Why this view is useful
+## Why this view is useful
 
 - Displays all Place trajectories in a single view
 - Highlights national patterns while preserving local context
