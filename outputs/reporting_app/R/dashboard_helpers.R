@@ -2829,6 +2829,224 @@ display_demographic_split_chart <- function(
   return(p)
 }
 
+# spaghetti plot functions --------------------------------------------------
+#' Prepare metric data for dashboard visualisation
+#'
+#' @description
+#' Filters a submission dataset to a single metric and prepares a set of
+#' derived variables required by interactive dashboard visualisations.
+#'
+#' The function standardises date handling, derives Place-level caseload
+#' information and creates HTML hover labels suitable for use within
+#' `{plotly}` charts.
+#'
+#' It is intended to act as a common preprocessing step for multiple
+#' visualisations, including national and Place-level spaghetti plots.
+#'
+#' @param df A tibble containing NNHIP metric submission data
+#' @param metric_selected Character string identifying the metric to prepare
+#'
+#' @details
+#' The function:
+#'
+#' - filters the data to records where `demographic_type == "Total"`
+#' - filters the data to the selected metric
+#' - derives a formatted Place-month caseload from `value_type == "patients"`
+#' - replaces missing engagement counts with zero
+#' - converts reporting months from `zoo::yearmon` to `Date`
+#' - creates formatted hover labels for use in interactive Plotly charts
+#'
+#' Caseload values are calculated at the Place-month level and are intended
+#' for display within chart tooltips rather than analytical use.
+#'
+#' @returns
+#' A tibble containing the filtered metric data together with the following
+#' derived variables:
+#'
+#' - `caseload`: formatted denominator value for the Place-month
+#' - `month_dt`: reporting month converted to `Date`
+#' - `hover_label`: HTML-formatted text for Plotly hover interactions
+#' - `engagement_num`: engagement count with missing values replaced by zero
+#'
+#' All original variables are retained
+prepare_metric_data <- function(df, metric_selected) {
+  df_return <-
+    df |>
+    dplyr::filter(
+      demographic_type == "Total",
+      metric == metric_selected
+    ) |>
+    # prepare some fields for plotting
+    dplyr::mutate(
+      caseload = dplyr::first(value[value_type == "patients"]) |>
+        scales::number(big.mark = ","),
+      engagement_num = dplyr::coalesce(engagement_num, 0),
+      .by = c(place, month_zoo)
+    ) |>
+    dplyr::mutate(
+      month_dt = zoo::as.Date(month_zoo),
+      hover_label = glue::glue(
+        "<b>{place}</b>
+          {month_zoo}
+          Rate: {scales::number(x = value, accuracy = 0.1)} per 1,000
+          Caseload: {engagement_num} of {caseload}
+          "
+      )
+    )
+
+  return(df_return)
+}
+
+#' Calculate monthly population-weighted mean rates
+#'
+#' @description
+#' Calculates monthly national population-weighted mean rates from Place-level
+#' submitted numerator and denominator data.
+#'
+#' The function aggregates reported counts and populations across Places before
+#' calculating a single national rate per 1,000 patients for each reporting month.
+#'
+#' This approach ensures that Places contribute proportionally according to
+#' their denominator population and avoids the bias that can arise from taking a
+#' simple arithmetic mean of Place-level rates.
+#'
+#' The resulting dataset is suitable for use in dashboard visualisations,
+#' benchmark overlays and summary tables.
+#'
+#' @param df A tibble containing NNHIP metric submission data, as produced by
+#' `prepare_metric_data()`
+#'
+#' @details
+#' The function performs the following steps:
+#'
+#' - Aggregates numerator (`value_type == "count"`) and denominator
+#'   (`value_type == "patients"`) values at the Place-month level.
+#' - Removes Place-months where the denominator is missing or equal to zero
+#' - Aggregates Place-level numerators and denominators to national level
+#' - Calculates the national population-weighted rate per 1,000 patients
+#' - Generates hover labels suitable for use in interactive Plotly charts
+#' - Sorts the resulting data chronologically
+#'
+#' The population-weighted rate is calculated as:
+#' `(sum(numerator) / sum(denominator)) * 1000`
+#'
+#' where the sums are taken across all included Places for each reporting month.
+#'
+#' @returns
+#' A tibble containing one record per reporting month with the following derived
+#' variables
+#'
+#' - `numerator`: aggregated national numerator
+#' - `denominator`: aggregated national denominator
+#' - `rate`: population-weighted national rate per 1,000 patients
+#' - `hover_label`: HTML-formatted label for Plotly hover interactions
+#'
+#' The original grouping variables (`month_zoo`, `month_dt`, `metric_block`)
+#' are retained.
+get_monthly_population_weighted_means <- function(df) {
+  df_return <-
+    df |>
+    dplyr::summarise(
+      numerator = sum(value[value_type == "count"]) |> dplyr::coalesce(0),
+      denominator = sum(value[value_type == "patients"]) |>
+        dplyr::coalesce(0),
+      .by = c(place, month_zoo, month_dt, metric_block)
+    ) |>
+    # remove entries where the denominator is zero
+    dplyr::filter(!is.na(denominator), denominator > 0) |>
+    # aggregate up per month and metric to get a national view
+    dplyr::summarise(
+      numerator = sum(numerator),
+      denominator = sum(denominator),
+      .by = c(month_zoo, month_dt, metric_block)
+    ) |>
+    # calculate the rate
+    dplyr::mutate(
+      rate = (numerator / denominator) * 1000,
+      hover_label = glue::glue(
+        "<b>Population-weighted mean</b>
+        {month_zoo}
+        Rate: {scales::number(x = rate, accuracy = 0.1)} per 1,000
+        {scales::number(x = numerator, big.mark = ',')} / {scales::number(x = denominator, big.mark = ',')}"
+      )
+    ) |>
+    # sort chronologically
+    dplyr::arrange(month_dt)
+
+  return(df_return)
+}
+
+#' Caclulate monthly median and inter-quartile range statistics
+#'
+#' @description
+#' Calculates monthly median and inter-quartile range (IQR) statistics from
+#' Place-level reported rates.
+#'
+#' The function summarises the distribution of Place values for each reporting
+#' month by calculating the median, 25th percentile and 75th percentile.
+#'
+#' These statistics can be used to provide national context within interactive
+#' visualisations, allowing users to understand the typical range of values
+#' reported across participating Places without implying a performance target
+#' or benchmark.
+#'
+#' The resulting dataset is suitable for use in benchmark overlays, summary
+#' tables and dashboard visualisations.
+#'
+#' @param df A tibble containing NNHIP metric submission data, as produced by
+#' `prepare_metric_data()`
+#'
+#' @details
+#' The function performs the following steps:
+#'
+#' - filters the dataset to records where `value_type == "rate_per_1000"`
+#' - calculates the median Place rate for each reporting month
+#' - calculates the 25th percentle (Q25) and 75th percentile (Q75)
+#' - generates hover labels suitable for use within interactive Plotly charts
+#' - sorts the resulting dataset chronologically
+#'
+#' Quartiles are calculated using: `quantile(type = 7)` which correspondds to
+#' the default quantile definition used by R.
+#'
+#' The resulting statistics describe variation across Places and should be
+#' interpreted as descriptive summaries rather than targets or measures of
+#' performance.
+#'
+#' @returns
+#' A tibble containing one record per reporting month with the following
+#' derived variables:
+#'
+#' - `median`: median Place rate per 1,000 patients
+#' - `q25`: 25th percentile rate
+#' - `q75`: 75th percentile rate
+#' - `hover_label`: HTML-formatted label for Plotly hover interactions
+#'
+#' The original grouping variables (`month_zoo`, `month_dt`, `metric_block`)
+#' are retained.
+get_monthly_median_and_iqr <- function(df) {
+  df_return <-
+    df |>
+    dplyr::filter(value_type == "rate_per_1000") |>
+    dplyr::summarise(
+      median = median(x = value, na.rm = TRUE),
+      q25 = quantile(x = value, prob = 0.25, na.rm = TRUE, type = 7),
+      q75 = quantile(x = value, prob = 0.75, na.rm = TRUE, type = 7),
+      .by = c(month_dt, month_zoo, metric_block)
+    ) |>
+    dplyr::mutate(
+      hover_label = glue::glue(
+        "<b>Median and inter-quartile range</b>
+          {month_zoo}
+          Rate: {scales::number(x = median, accuracy = 0.1)} per 1,000,
+          IQR: ({scales::number(q25, accuracy = 1)}, {scales::number(q75, accuracy = 1)})"
+      )
+    ) |>
+    # sort chronologically
+    dplyr::arrange(month_dt)
+
+  return(df_return)
+}
+
 #' Prepare data for the national spaghetti plot
 #'
 #' @description
@@ -2871,29 +3089,7 @@ get_data_for_national_spaghetti_plot <- function(
   metric_selected
 ) {
   # data minimisation
-  df_m <-
-    df |>
-    dplyr::filter(
-      demographic_type == "Total",
-      metric == metric_selected,
-    ) |>
-    # prepare some fields for plotting
-    dplyr::mutate(
-      caseload = dplyr::first(value[value_type == "patients"]) |>
-        scales::number(big.mark = ","),
-      engagement_num = dplyr::coalesce(engagement_num, 0),
-      .by = c(place, month_zoo)
-    ) |>
-    dplyr::mutate(
-      month_dt = zoo::as.Date(month_zoo),
-      hover_label = glue::glue(
-        "<b>{place}</b>
-          {month_zoo}
-          Rate: {scales::number(x = value, accuracy = 0.1)} per 1,000
-          Caseload: {engagement_num} of {caseload}
-          "
-      )
-    )
+  df_m <- prepare_metric_data(df = df, metric_selected = metric_selected)
 
   # prepare the data for plotting
   df_p <-
@@ -2904,55 +3100,12 @@ get_data_for_national_spaghetti_plot <- function(
     dplyr::arrange(place, month_dt)
 
   # prepare the national average
-  df_national_pop_weighted_mean <-
-    df_m |>
-    dplyr::summarise(
-      numerator = sum(value[value_type == "count"]) |> dplyr::coalesce(0),
-      denominator = sum(value[value_type == "patients"]) |>
-        dplyr::coalesce(0),
-      .by = c(place, month_zoo, month_dt, metric_block)
-    ) |>
-    # remove entries where the denominator is zero
-    dplyr::filter(!is.na(denominator), denominator > 0) |>
-    # aggregate up per month and metric to get a national view
-    dplyr::summarise(
-      numerator = sum(numerator),
-      denominator = sum(denominator),
-      .by = c(month_zoo, month_dt, metric_block)
-    ) |>
-    # calculate the rate
-    dplyr::mutate(
-      rate = (numerator / denominator) * 1000,
-      hover_label = glue::glue(
-        "<b>Population-weighted mean</b>
-        {month_zoo}
-        Rate: {scales::number(x = rate, accuracy = 0.1)} per 1,000
-        {scales::number(x = numerator, big.mark = ',')} / {scales::number(x = denominator, big.mark = ',')}"
-      )
-    ) |>
-    # sort chronologically
-    dplyr::arrange(month_dt)
+  df_national_pop_weighted_mean <- get_monthly_population_weighted_means(
+    df = df_m
+  )
 
   # prepare the national median and iqr
-  df_national_median_iqr <-
-    df_m |>
-    dplyr::filter(value_type == "rate_per_1000") |>
-    dplyr::summarise(
-      median = median(x = value, na.rm = TRUE),
-      q25 = quantile(x = value, prob = 0.25, na.rm = TRUE, type = 7),
-      q75 = quantile(x = value, prob = 0.75, na.rm = TRUE, type = 7),
-      .by = c(month_dt, month_zoo, metric_block)
-    ) |>
-    dplyr::mutate(
-      hover_label = glue::glue(
-        "<b>Median and inter-quartile range</b>
-          {month_zoo}
-          Rate: {scales::number(x = median, accuracy = 0.1)} per 1,000,
-          IQR: ({scales::number(q25, accuracy = 1)}, {scales::number(q75, accuracy = 1)})"
-      )
-    ) |>
-    # sort chronologically
-    dplyr::arrange(month_dt)
+  df_national_median_iqr <- get_monthly_median_and_iqr(df = df_m)
 
   # compile the data for returning
   list_return <- list(
@@ -3150,6 +3303,817 @@ display_national_spaghetti_plot <- function(
         title = "Rate per 1,000",
         zeroline = FALSE
       ),
+      title = list(text = str_title),
+      font = list(family = "Roboto, Arial, sans-serif", size = 16),
+      showlegend = FALSE,
+      margin = list(l = 40, r = 40, t = 100, b = 60)
+    ) |>
+    plotly::config(displaylogo = FALSE)
+
+  # return the plot
+  return(p)
+}
+
+#' Calculate similarity between two Place metric trajectories
+#'
+#' @description
+#' Calculates a set of similarity measures between two numeric time-series
+#' vectors representing Place trajectories.
+#'
+#' The function is designed to support identification of nearest neighbours
+#' based on similarity of trends over time. It returns:
+#'
+#' - Pearson correlation
+#' - Euclidean distance
+#' - Number of overlapping observations
+#'
+#' Similarity is only calculated when the two series contain a minimum number
+#' of overlapping non-missing observations.
+#'
+#' @param x Numeric vector representing the first trajectory
+#' @param y Numeric vector representing the second trajectory
+#' @param min_overlap Integer indicating the minimum number of overlapping
+#' non-missing observations required before similarity statistics
+#' are calculated. Defaults to `4`.
+#'
+#' @details
+#' The function first counts the number of overlapping observations between `x`
+#' and `y`: `sum(!is.na(x) & !is.na(y))`
+#'
+#' If the number of overlapping observations is less than `min_overlap`, the
+#' function returns:
+#'
+#' - `correlation = NA`,
+#' - the observed overlap count
+#'
+#' This prevents similarity estimates from being calculated using an insufficient
+#' number of shared time periods.
+#'
+#' When sufficient overlap exists:
+#'
+#' - Pearson correlation is calculated using `use = "pairwise.complete.obs"`
+#' - Euclidean distance is calculated using all available overlapping observations
+#'
+#' Correlation measures similarity in the shape and direction of the trajectories,
+#' whilst Euclidean distance measures their absolute separation.
+#'
+#' These measures answer different analytical questions:
+#'
+#' - High correlation indicates Places follow a similar pattern over time
+#' - Low distance indicates Places have similar values over time
+#'
+#' @returns
+#' A tibble containing a single row with:
+#'
+#' - `correlation`: Pearson correlation coefficient
+#' - `distance`: Euclidean distance between the two trajectories
+#' - `overlap`: Number of overlapping observations
+#'
+#' If the number of overlapping observations is below `min_overlap`,
+#' `correlation` and `distance` are returned as `NA` whilst `overlap` contains
+#' the observed overlap count.
+calculate_similarity <- function(x, y, min_overlap = 4) {
+  # input validation
+  stopifnot(
+    is.numeric(x),
+    is.numeric(y),
+    length(x) == length(y)
+  )
+
+  # work out the number of months overlap
+  idx <- !is.na(x) & !is.na(y)
+  overlap <- sum(idx)
+
+  # return a standard tibble if there are too few overlapping observations
+  if (overlap < min_overlap) {
+    return(
+      tibble::tibble(
+        correlation = NA_real_,
+        distance = NA_real_,
+        overlap = overlap
+      )
+    )
+  }
+
+  # work out the Euclidean distance
+  distance <- sqrt(sum((x[idx] - y[idx])^2, na.rm = TRUE))
+
+  # return tibble
+  df_return <- tibble::tibble(
+    correlation = cor(x = x, y = y, use = "pairwise.complete.obs"),
+    distance = distance,
+    overlap = overlap
+  )
+  return(df_return)
+}
+
+#' Identify nearest neighbour Places based on trajectory similarity
+#'
+#' @description
+#' Idenfifies Places whose metric trajectories are most similar to a selected
+#' Place.
+#'
+#' The function compares indexed Place-level rate trajectories and ranks other
+#' Places according to either Pearson correlation or Euclidean distance.
+#'
+#' Prior to comparison, each Place's trajectory is indexed to its first reported
+#' non-missing value, allowing similarity to be assessed on the basis of
+#' relative change over time rather than absolute rate values.
+#'
+#' The function is intended to support Place-level benchmarking and exploratory
+#' analysis by identifying Places exhibiting similar patterns of change.
+#'
+#' @param df A tibble containing Place-level rate data.
+#' @param place_selected Character string identifying the Place for which
+#' neighbours should be identified.
+#' @param n Integer indicating the number of neighbours to return. Defaults to `5`.
+#' @param method Character indicating the similarity metric to use. Must be one of:
+#' - `"correlation"`
+#' - `"euclidean"`
+#' Defaults to `"correlation"`
+#' @param min_overlap Integer indicating the minimum number of overlapping
+#' non-missing monthly observations required before two Places can be compared.
+#' Defaults to `4`.
+#'
+#' @details
+#' The function performs the following steps:
+#'
+#' - Indexes each Place's trajectory such that the first observed value equals 100.
+#' - Creates a complete Place-month grid to make missing observations explicit.
+#' - Reshapes the data into a Place-by-month matrix
+#' - Calculates pairwise similarity between the selected Place and all other Places.
+#' - Filters comparisons that do not meet the minimum overlap requirement.
+#' - Ranks candidate neighbours according to the selected similarity measure.
+#'
+#' When `method == "correlation"`, Places are ranked by descending Pearson
+#' correlation coefficient. Higher values indicate more similar trajectories.
+#'
+#' When `method == "euclidean"`, Places are rankd by ascending Euclidean distance.
+#' Smaller values indicate more similar trajectories.
+#'
+#' Similarity statistics are calculated using `calculate_similarity()`.
+#'
+#' @returns
+#' A tibble containing up to `n` nearest neighbour Places with the following variables:
+#' - `place`: neighbouring Place
+#' - `similarity_method`: method used for ranking
+#' - `correlation`: Pearson correlation coefficient
+#' - `distance`: Euclidean distance
+#' - `overlap`: number of overlapping monthly observations
+#'
+#' Results are ordered from most similar to least similar according to the selected method.
+get_nearest_neighbours_by_trajectory <- function(
+  df,
+  place_selected,
+  n = 5,
+  method = c("correlation", "euclidean"),
+  min_overlap = 4
+) {
+  # input validation
+  method <- match.arg(arg = method, choices = c("correlation", "euclidean"))
+  stopifnot(
+    is.numeric(n),
+    length(n) == 1
+  )
+
+  # index each place's rate on their first month's return
+  df_indexed <-
+    df |>
+    dplyr::select(place, month_dt, value) |>
+    dplyr::arrange(place, month_dt) |>
+    dplyr::mutate(
+      # baseline_rate = dplyr::first(value[!is.na(value)]),
+      baseline_rate = if (all(is.na(value))) {
+        NA_real_
+      } else {
+        dplyr::first(value[!is.na(value)])
+      },
+      value_index = (value / baseline_rate) * 100,
+      .by = place
+    ) |>
+    tidyr::complete(place, month_dt)
+
+  # pivot wider and convert to a matrix
+  mat <-
+    df_indexed |>
+    dplyr::select(place, month_dt, value_index) |>
+    tidyr::pivot_wider(names_from = month_dt, values_from = value_index) |>
+    tibble::column_to_rownames("place") |>
+    as.matrix()
+
+  if (!place_selected %in% rownames(mat)) {
+    stop("Selected place not found")
+  }
+
+  # work out the nearest neighbour statistics for all other Places
+  df_neighbours_stats <-
+    purrr::map_dfr(
+      .x = setdiff(rownames(mat), place_selected),
+      .f = function(p) {
+        # work out similarity with selected place
+        result <- calculate_similarity(
+          x = mat[place_selected, ],
+          y = mat[p, ],
+          min_overlap = min_overlap
+        )
+
+        # return as a tibble
+        dplyr::bind_cols(
+          tibble::tibble(place = p, similarity_method = method),
+          result
+        )
+      }
+    )
+
+  # select matching records
+  df_neighbours <-
+    if (method == "correlation") {
+      df_neighbours_stats |>
+        dplyr::filter(!is.na(correlation)) |>
+        dplyr::arrange(dplyr::desc(correlation)) |>
+        dplyr::slice_head(n = n)
+    } else {
+      df_neighbours_stats |>
+        dplyr::filter(!is.na(distance)) |>
+        dplyr::arrange(distance) |>
+        dplyr::slice_head(n = n)
+    }
+
+  # return
+  return(df_neighbours)
+}
+
+#' Prepare data for Place-level spaghetti plot
+#'
+#' @description
+#' Prepares and summarises all datasets required to support the Place-level
+#' spaghetti plot visualisation.
+#'
+#' The function filters the supplied dataset to a selected metric, derives
+#' Place-level plotting datasets, identifies the selected Place's engagement
+#' start month, calculates national benchmark statistics and identifies
+#' trajectory-based nearest neighbours using both correlation and Euclidean
+#' distance methods.
+#'
+#' The returned objects are inteded for use by `display_place_spaghetti_plot()`
+#' and related Place-based dashboard components.
+#'
+#' @param df A tibble containing NNHIP metric submission data.
+#' @param df_comparators A tibble containing comparator metric data.
+#' @param metric_selected Character string identifying the metric to be displayed.
+#' @param place_selected Character string identifying the Place to be displayed.
+#'
+#' @details
+#' The function performs the following steps:
+#'
+#' - Validates user inputs
+#' - Filters and prepares data for the selected metric using `prepare_metric_data()`
+#' - Creates a Place-level rate dataset for all Places.
+#' - Isolates the selected Place's trajectory.
+#' - Identifies whether the selected Place has submitted data for the selected metric
+#' - Identifies whether the selected Place has reported active cohort engagement
+#' - Determines the first month of reported cohort engagement
+#' - Calculates population-weighted mean rates using
+#'   `get_monthly_population_weighted_means()`.
+#' - Calculates national median and inter-quartile range statistics using
+#'   `get_monthly_median_and_iqr()`
+#' - Identifies nearest neighbour Places based on trajectory similarity using
+#'   - Pearson correlation
+#'   - Euclidean correlation
+#' - Augments nearest neighbour datasets with similarity statistics and
+#'   hover-label information suitable for use within interactive Plotly charts.
+#'
+#' Nearest neighbours are identified from indexed Place trajectories, allowing
+#' Places with similar trends to be identified even when their absolute rates
+#' differ substantially.
+#'
+#' If the selected Place has not submitted data for the chosen metric, empty
+#' nearest-neighbour datasets are returned and engagement statistics are not
+#' calculated.
+#'
+#' @returns
+#' A named list containing:
+#' - `selected_place`: Name of the selected place
+#' - `df_all_places`: Place-level rate data for all Places, suitable for
+#'   background spaghetti traces
+#' - `df_selected_place`: Place-level rate data for the selected Place.
+#' - `nearest_neighbours_correlation`: Summary table of nearest neighbours
+#'   identified using Pearson correlation
+#' - `nearest_neighbours_distance`: Summary table of nearest neighbours
+#'   identified using Euclidean distance
+#' - `df_nearest_neighbours_correlation`: Plot-ready dataset for correlation-
+#'   based neighbours, including similarity statistics and hover labels
+#' - `df_nearest_neighbours_distance`: Plot-ready dataset for distance-based
+#'   neighbours, including similarity statistics and hover labels
+#' - `flag_selected_place_has_data`: Logical flag indicating whether the
+#'   selected Place has data for the chosen metric
+#' - `flag_selected_place_is_engaging`: Logical flag indicating whether the
+#'   selected Place has reported active cohort engagement.
+#' - `month_dt_place_engagement`: Date corresponding to the first month in
+#'   which the selected Place reported active cohort engagement. Returns `NULL`
+#'   if no engagement is reported.
+#' - `df_national_pop_weighted_mean`: Monthly national population-weighted mean rates.
+#' - `df_national_median_iqr`: Monthly national median and inter-quartile range statistics.
+get_data_for_place_spaghetti_plot <- function(
+  df,
+  df_comparators,
+  metric_selected,
+  place_selected
+) {
+  # input validation
+  stopifnot(
+    is.data.frame(df),
+    length(metric_selected) == 1,
+    is.character(metric_selected),
+    length(place_selected) == 1,
+    is.character(place_selected)
+  )
+
+  # data minimisation
+  df_m <- prepare_metric_data(df = df, metric_selected = metric_selected)
+
+  # prepare the data for plotting
+  df_all_places <-
+    df_m |>
+    # get the reported rates
+    dplyr::filter(value_type == "rate_per_1000") |>
+    # need to arrange chronologically for {plotly} to show lines correctly
+    dplyr::arrange(place, month_dt)
+
+  # get the selected place
+  df_selected_place <-
+    df_all_places |>
+    dplyr::filter(place == place_selected)
+
+  # flag when the selected place has no data
+  flag_selected_place_has_data <- nrow(df_selected_place) > 0
+
+  # flag if the place is engaging with their cohort
+  flag_selected_place_is_engaging <- flag_selected_place_has_data &&
+    any(df_selected_place$flag_actively_engaged == 1, na.rm = TRUE)
+
+  # identify the month when the selected place first reported engagement
+  month_dt_place_engagement <-
+    if (flag_selected_place_is_engaging) {
+      df_selected_place |>
+        dplyr::filter(flag_actively_engaged == 1) |>
+        dplyr::slice_min(order_by = month_dt, n = 1, with_ties = FALSE) |>
+        dplyr::pull(month_dt)
+    } else {
+      NULL
+    }
+
+  # prepare the dataset of comparator data (if available)
+  df_comparator <-
+    df_comparators |>
+    dplyr::filter(
+      metric == metric_selected,
+      place == place_selected,
+      month_dt <= max(df_m$month_dt)
+    ) |>
+    dplyr::arrange(month_dt) |>
+    dplyr::mutate(
+      comparator_value = value,
+      hover_label = glue::glue(
+        "<b>Matched population</b>
+          {month_zoo}
+          Rate: {scales::number(x = value, accuracy = 0.1)} per 1,000
+          "
+      )
+    )
+
+  # prepare the dataset of nearest neighbours (based on correlation)
+  if (flag_selected_place_has_data) {
+    nearest_neighbours_correlation <- get_nearest_neighbours_by_trajectory(
+      df = df_all_places,
+      place_selected = place_selected,
+      n = 5,
+      method = "correlation",
+      min_overlap = 4
+    )
+    df_nearest_neighbours_correlation <-
+      df_all_places |>
+      dplyr::filter(place %in% nearest_neighbours_correlation$place) |>
+      # add in details about the matching
+      dplyr::left_join(
+        y = nearest_neighbours_correlation |>
+          dplyr::select(place, correlation, distance, overlap),
+        by = "place"
+      ) |>
+      # update the hover label
+      dplyr::mutate(
+        correlation_label = correlation |> scales::number(accuracy = 0.01),
+        distance_label = distance |> scales::number(accuracy = 1),
+        hover_label = glue::glue(
+          "{hover_label}
+        
+        Distance: {distance_label} (lower indicates a more similar trajectory)
+        Correlation: {correlation_label} (higher indicates a more similar trajectory)
+        Overlapping months: {overlap}
+        "
+        )
+      )
+
+    # prepare the dataset of nearest neighbours (based on distance)
+    nearest_neighbours_distance <- get_nearest_neighbours_by_trajectory(
+      df = df_all_places,
+      place_selected = place_selected,
+      n = 5,
+      method = "euclidean",
+      min_overlap = 4
+    )
+    df_nearest_neighbours_distance <-
+      df_all_places |>
+      dplyr::filter(place %in% nearest_neighbours_distance$place) |>
+      # add in details about the matching
+      dplyr::left_join(
+        y = nearest_neighbours_distance |>
+          dplyr::select(place, correlation, distance, overlap),
+        by = "place"
+      ) |>
+      # update the hover label
+      dplyr::mutate(
+        correlation_label = correlation |> scales::number(accuracy = 0.01),
+        distance_label = distance |> scales::number(accuracy = 1),
+        hover_label = glue::glue(
+          "{hover_label}
+        
+        Distance: {distance_label} (lower indicates a more similar trajectory)
+        Correlation: {correlation_label} (higher indicates a more similar trajectory)
+        Overlapping months: {overlap}
+        "
+        )
+      )
+  } else {
+    df_nearest_neighbours_correlation <- tibble::tibble()
+    df_nearest_neighbours_distance <- tibble::tibble()
+    nearest_neighbours_distance <- tibble::tibble()
+    nearest_neighbours_correlation <- tibble::tibble()
+  }
+
+  # prepare the national average
+  df_national_pop_weighted_mean <- get_monthly_population_weighted_means(
+    df = df_m
+  )
+
+  # prepare the national median and iqr
+  df_national_median_iqr <- get_monthly_median_and_iqr(df = df_m)
+
+  # compile the data for returning
+  list_return <- list(
+    "selected_place" = place_selected,
+    "df_all_places" = df_all_places,
+    "df_selected_place" = df_selected_place,
+    "df_comparator" = df_comparator,
+    "nearest_neighbours_correlation" = nearest_neighbours_correlation,
+    "nearest_neighbours_distance" = nearest_neighbours_distance,
+    "df_nearest_neighbours_correlation" = df_nearest_neighbours_correlation,
+    "df_nearest_neighbours_distance" = df_nearest_neighbours_distance,
+    "flag_selected_place_has_data" = flag_selected_place_has_data,
+    "flag_selected_place_is_engaging" = flag_selected_place_is_engaging,
+    "month_dt_place_engagement" = month_dt_place_engagement,
+    "df_national_pop_weighted_mean" = df_national_pop_weighted_mean,
+    "df_national_median_iqr" = df_national_median_iqr
+  )
+  return(list_return)
+}
+
+
+#' Display a Place-level spaghetti plot for NNHIP metrics
+#'
+#' @description
+#' Creates an interactive Plotly visualisation showing the trajectory of a
+#' selected Pplace over time for a chosen metric.
+#'
+#' The chart can optionally display:
+#'
+#' - all participating Places as low-opacity background trajectories
+#' - nearest-neighbour Places identified using trajectory similarity
+#' - a population-weighted national mean
+#' - a national median and inter-quartile range (IQR)
+#' - a marker indicating the first month in which the selected Place reported
+#' active cohort engagement
+#'
+#' The selected Place is always displayed as the primary visual focus.
+#'
+#' @param data_list A named list produced by `get_data_for_place_spaghetti_plot()`
+#' @param show_places Logical indicating whether all participating Places
+#' should be displayed as faint beackground trajectories. Defaults to `FALSE`.
+#' @param show_neighbours_correlation Logical indicating whether trajectory
+#' neighbours identified using Pearson correlation should be displayed.
+#' Defaults to `FALSE`.
+#' @param show_neighbours_distance Logical indicating whether trajectory
+#' neighbours identified using Euclidean distance should be displayed. Defaults to `FALSE`.
+#' @param show_engagement_month Logical indicating whether the first reported
+#' cohort engagement period should be highlighted. Defaults to `FALSE`.
+#' @param show_mean Logical indicating whether a national population-weighted
+#' mean should be displayed. Defaults to `FALSE`.
+#' @param show_median_iqr Logical indicating whether the national median and
+#' inter-quartile range should be displayed. Defaults to `FALSE`
+#'
+#' @details
+#' The function produces a Place-focused spaghetti plot in which:
+#'
+#' - the selected Place is displayed in a prominent blue trajectory
+#' - optional background Place traces to provide national context
+#' - optional nearest-neighbour traces provide comparison with Places
+#'   exhibiting similar patterns of change
+#' - optional national benchmark overlays provide additional context for
+#'   interpreting trends and variation
+#'
+#' Nearest neighbour traces are generated using
+#' `get_nearest_neighbours_by_trajectory()` and are intended to support
+#' exploratory analysis and hypothesis generation.
+#'
+#' When enabled, the cohort-engagement marker is displayed as:
+#'
+#' - a shaded region extending from the first month the reported cohort
+#' engagement to the latest available month
+#' - an annotation identifying the start of the engagement period
+#'
+#' This helps distinguish baseline activity from activity occurring after
+#' the Place began reporting cohort engagement.
+#'
+#' If the selected Place has not reported a chosen metric, the function
+#' returns a placeholder Plotly chart informing the user that data is
+#' unavailable.
+#'
+#' @section Visual design:
+#' The chart uses the following visual heirarchy:
+#'
+#' - Selected Place: prominent blue line and markers
+#' - Nearest neighbours: medium-opacity grey lines
+#' - All Places: low-opacity grey lines
+#' - National population-weighted mean: dark blue line and markers
+#' - National median: amber line and markers
+#' - Inter-quartile range: semi-transparent amber ribbon
+#'
+#' This ensures the selected Place remains the primary focus whilst
+#' preserving useful contextual information.
+#'
+#' @section Hover information:
+#' The selected Place, national benchmark trances and neighbour traces
+#' include custom hover text describing the underlying observations.
+#'
+#' Nearest-neighbour labels additional display:
+#'
+#' - trajectory correlation
+#' - trajectory distance
+#' - overlapping reporting months
+#'
+#' Hover interactions are intentionally disabled for the IQR ribbon
+#' to avoid obscuring the median trace.
+#'
+#' @returns
+#' A Plotly htmlwidget object suitable for rendering within:
+#'
+#' - Shiny applications
+#' - Quarto documents
+#' - R Markdown documents
+#'
+#' Depending on the selection options, the resulting plot may contain:
+#'
+#' - a selected Place trajectory
+#' - Place-elvel background trajectories
+#' - nearest-neighbour trajectories
+#' - a population-weighted national mean
+#' - a median trajectory
+#' - an interquartile range ribbon
+#' - cohort-engagement annotations
+#'
+#' If no Place-level data exists for the selected metric, a placeholder chart is returned instead.
+display_place_spaghetti_plot <- function(
+  data_list = NULL,
+  show_comparator = FALSE,
+  show_places = FALSE,
+  show_neighbours_correlation = FALSE,
+  show_neighbours_distance = FALSE,
+  show_engagement_month = FALSE,
+  show_mean = FALSE,
+  show_median_iqr = FALSE
+) {
+  # get a title for the chart (ensure if fits in the plot area)
+  str_title <- data_list$df_all_places |>
+    dplyr::pull(metric) |>
+    as.character() |>
+    dplyr::first(default = "Metric") |>
+    stringr::str_wrap(width = 100) |>
+    stringr::str_replace_all(pattern = "\n", replacement = "<br>")
+
+  # check there is data for this metric and place
+  if (!data_list$flag_selected_place_has_data) {
+    return(
+      plotly::plot_ly() |>
+        plotly::layout(
+          title = list(
+            text = glue::glue(
+              "{str_title}
+              <sup>{data_list$selected_place} has not submitted data for this metric</sup>"
+            )
+          ),
+          xaxis = list(visible = FALSE),
+          yaxis = list(visible = FALSE),
+          annotations = list(list(
+            text = "No data available",
+            x = 0.5,
+            y = 0.5,
+            xref = "paper",
+            yref = "paper",
+            showarrow = FALSE
+          ))
+        )
+    )
+  }
+
+  # plotting
+  plot_shapes <- list()
+  plot_annotations <- list()
+  p <- plotly::plot_ly()
+
+  # add in other places if requested ----
+  if (show_places == TRUE) {
+    # add elements to the plot
+    p <- p |>
+      plotly::add_trace(
+        data = data_list$df_all_places,
+        x = ~month_dt,
+        y = ~value,
+        split = ~place,
+        name = "Place",
+        type = "scatter",
+        mode = "lines",
+        text = ~hover_label,
+        hoverinfo = "text",
+        line = list(color = "rgba(53, 59, 72, 0.1)")
+      )
+  }
+
+  # add in nearest neighbours (based on correlation) if requested -----
+  if (show_neighbours_correlation == TRUE) {
+    # add elements to the plot
+    p <- p |>
+      plotly::add_trace(
+        data = data_list$df_nearest_neighbours_correlation,
+        x = ~month_dt,
+        y = ~value,
+        split = ~place,
+        name = "Neighbour",
+        type = "scatter",
+        mode = "lines",
+        text = ~hover_label,
+        hoverinfo = "text",
+        line = list(color = "rgba(53, 59, 72, 0.3)", width = 4)
+      )
+  }
+
+  # add in nearest neighbours (based on distance) if requested -----
+  if (show_neighbours_distance == TRUE) {
+    # add elements to the plot
+    p <- p |>
+      plotly::add_trace(
+        data = data_list$df_nearest_neighbours_distance,
+        x = ~month_dt,
+        y = ~value,
+        split = ~place,
+        name = "Neighbour",
+        type = "scatter",
+        mode = "lines",
+        text = ~hover_label,
+        hoverinfo = "text",
+        line = list(color = "rgba(53, 59, 72, 0.3)", width = 4)
+      )
+  }
+
+  # add in the engagement month reference line if requested ----
+  if (
+    show_engagement_month == TRUE &&
+      data_list$flag_selected_place_is_engaging == TRUE
+  ) {
+    # define the plot area definition
+    plot_shapes <- list(
+      list(
+        type = "rect",
+        x0 = data_list$month_dt_place_engagement,
+        x1 = max(data_list$df_selected_place$month_dt),
+        y0 = 0,
+        y1 = 1,
+        xref = "x",
+        yref = "paper",
+        fillcolor = "rgba(39, 60, 117, 0.05)",
+        line = list(width = 0)
+      )
+    )
+
+    # define the annotation
+    plot_annotations <- list(
+      list(
+        x = data_list$month_dt_place_engagement,
+        y = 1.02,
+        yref = "paper",
+        text = "First reported cohort engagement",
+        showarrow = FALSE,
+        xanchor = "left",
+        yanchor = "bottom"
+      )
+    )
+  }
+
+  # add in the national pop-weighted mean if requested ----
+  if (show_mean == TRUE) {
+    p <- p |>
+      plotly::add_trace(
+        data = data_list$df_national_pop_weighted_mean,
+        x = ~month_dt,
+        y = ~rate,
+        name = "Population-weighted mean",
+        type = "scatter",
+        mode = "lines+markers",
+        line = list(color = "rgba(39, 60, 117, 0.9)", width = 4),
+        marker = list(size = 10, color = "rgba(25, 42, 86, 1.0)"),
+        text = ~hover_label,
+        hoverinfo = "text"
+      )
+  }
+
+  # add median and iqr if requested ----
+  if (show_median_iqr == TRUE) {
+    # add elements to the plot
+    p <- p |>
+      # add the iqr ribbon
+      plotly::add_ribbons(
+        data = data_list$df_national_median_iqr,
+        x = ~month_dt,
+        ymin = ~q25,
+        ymax = ~q75,
+        name = "IQR",
+        line = list(width = 0),
+        fillcolor = "rgba(251, 197, 49, 0.2)",
+        hoverinfo = "skip"
+      ) |>
+      # add the median
+      plotly::add_trace(
+        data = data_list$df_national_median_iqr,
+        x = ~month_dt,
+        y = ~median,
+        name = "Median",
+        type = "scatter",
+        mode = "lines+markers",
+        line = list(color = "rgba(251, 197, 49, 0.9)", width = 4),
+        marker = list(size = 10, color = "rgba(225, 177, 44, 1.0)"),
+        text = ~hover_label,
+        hoverinfo = "text"
+      )
+  }
+
+  # add in the comparator trace if requested ----
+  if (show_comparator == TRUE) {
+    p <- p |>
+      plotly::add_trace(
+        data = data_list$df_comparator,
+        x = ~month_dt,
+        y = ~comparator_value,
+        name = "Matched population",
+        type = "scatter",
+        mode = "lines+markers",
+        line = list(color = "rgba(72, 126, 176, 0.8))", width = 5),
+        marker = list(size = 11, color = "rgba(64, 115, 158, 1)"),
+        text = ~hover_label,
+        hoverinfo = "text"
+      )
+  }
+
+  # add in the selected place (should be last to be on top of other traces) ----
+  p <- p |>
+    plotly::add_trace(
+      data = data_list$df_selected_place,
+      x = ~month_dt,
+      y = ~value,
+      name = "Selected place",
+      type = "scatter",
+      mode = "lines+markers",
+      line = list(color = "rgba(0, 168, 255, 0.9)", width = 6),
+      marker = list(size = 12, color = "rgba(0, 151, 230, 1.0)"),
+      text = ~hover_label,
+      hoverinfo = "text"
+    )
+
+  # add some formatting
+  p <- p |>
+    plotly::layout(
+      xaxis = list(
+        title = "Reporting month",
+        tickformat = "%b %Y",
+        dtick = "M1"
+      ),
+      yaxis = list(
+        title = "Rate per 1,000",
+        zeroline = TRUE,
+        rangemode = "tozero"
+      ),
+
+      shapes = plot_shapes, # adds the reference line, if requested
+      annotations = plot_annotations, # adds the description, if requested
+
       title = list(text = str_title),
       font = list(family = "Roboto, Arial, sans-serif", size = 16),
       showlegend = FALSE,
