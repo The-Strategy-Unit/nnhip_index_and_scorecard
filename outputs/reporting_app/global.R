@@ -40,6 +40,7 @@ board <- pins::board_connect(
 )
 pin_name <- glue::glue("{prefix}all")
 pin_name_issues <- glue::glue("{prefix}issueslog")
+pin_name_comparators <- glue::glue("{prefix}comparator")
 
 # define a list of places where we expect to receive information
 expected_places <- c(

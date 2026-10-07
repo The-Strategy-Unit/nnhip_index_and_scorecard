@@ -52,3 +52,6 @@ quarto::quarto_render(
 
 # open the report
 browseURL(here::here("outputs", "monthly_updates", "report_v1.html"))
+
+# --- Update comaparator data -------------------------------------------------
+update_comparator_data()

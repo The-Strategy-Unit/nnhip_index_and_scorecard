@@ -51,6 +51,13 @@ server <- function(input, output, session) {
     interval = 60 * 60 * 1000 # check hourly
   )
 
+  # read the pin for comparator data
+  df_comparators <- pins::pin_reactive_read(
+    board = board,
+    name = pin_name_comparators,
+    interval = 60 * 60 * 1000 # check hourly
+  )
+
   # pre-process the data ------------------------------------------------------
   df <- shiny::reactive({
     req(df_raw())
@@ -190,6 +197,11 @@ server <- function(input, output, session) {
     input$selected_place
   })
 
+  input_selected_metric_national <- shiny::reactive({
+    req(input$selected_metric_national)
+    input$selected_metric_national
+  })
+
   input_selected_metric <- shiny::reactive({
     req(input$selected_metric)
     input$selected_metric
@@ -218,8 +230,32 @@ server <- function(input, output, session) {
     isTRUE(input$national_spaghetti_mean)
   })
 
+  input_selected_show_mean_place <- shiny::reactive({
+    isTRUE(input$place_spaghetti_mean)
+  })
+
   input_selected_show_median <- shiny::reactive({
     isTRUE(input$national_spaghetti_median)
+  })
+
+  input_selected_show_median_place <- shiny::reactive({
+    isTRUE(input$place_spaghetti_median)
+  })
+
+  input_selected_show_places <- shiny::reactive({
+    isTRUE(input$show_places)
+  })
+
+  input_selected_show_similar_trajectories <- shiny::reactive({
+    isTRUE(input$show_similar_trajectories)
+  })
+
+  input_selected_show_engagement_period <- shiny::reactive({
+    isTRUE(input$show_engagement_month)
+  })
+
+  input_selected_show_comparator <- shiny::reactive({
+    isTRUE(input$show_matched_comparison)
   })
 
   # ui observers --------------------------------------------------------------
@@ -249,7 +285,16 @@ server <- function(input, output, session) {
     )
   })
 
-  # update the available metrics
+  # update the available metrics (national-level)
+  shiny::observe({
+    shiny::updateSelectizeInput(
+      session = session,
+      inputId = "selected_metric_national",
+      choices = metrics()
+    )
+  })
+
+  # update the available metrics (place-level)
   shiny::observe({
     shiny::updateSelectizeInput(
       session = session,
@@ -329,7 +374,7 @@ server <- function(input, output, session) {
     id = "national_spaghetti",
     df = df_national,
     flag_hq = input_selected_quality_national,
-    metric = input_selected_metric,
+    metric = input_selected_metric_national,
     show_mean = input_selected_show_mean,
     show_median = input_selected_show_median,
     df_version = pin_version_r
@@ -368,6 +413,23 @@ server <- function(input, output, session) {
     place = input_selected_place,
     metric = input_selected_metric,
     month = input_selected_month,
+    df_version = pin_version_r
+  )
+
+  ## place spaghetti plot -----------------------------------------------------
+  # module server call
+  mod_place_spaghetti_server(
+    id = "place_spaghetti",
+    df = df,
+    df_comparators = df_comparators,
+    metric = input_selected_metric,
+    place = input_selected_place,
+    show_comparator = input_selected_show_comparator,
+    show_places = input_selected_show_places,
+    show_neighbours = input_selected_show_similar_trajectories,
+    show_engagement_month = input_selected_show_engagement_period,
+    show_mean = input_selected_show_mean_place,
+    show_median = input_selected_show_median_place,
     df_version = pin_version_r
   )
 

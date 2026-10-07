@@ -988,6 +988,119 @@ create_placeholder_pins <- function(from = "2026-02-01", to = "2027-3-01") {
   invisible(TRUE)
 }
 
+
+#' Update comaprator data pin
+#'
+#' @description
+#' Reads the latest comparator CSV extracts, applies place and metric lookup
+#' tables, reshapes the data into a long format, derives month variables and
+#' publishes the resulting dataset to a Posit Connect board as a versioned pin.
+#'
+#' The function expects two source CSV files and an accompanying lookup workbook
+#' to be available within the comparator data directory. Place and metric codes
+#' are resolved using lookup tables before data are transformed into a
+#' standardised structure suitable for downstream reporting and analysis.
+#'
+#' The generated dataset contains one row per Place, month and metric, including
+#' both the raw values and data fields for the time series analysis.
+#'
+#' Connection details for the target Posit Connect server are obtained from the
+#' following environment variables:
+#'
+#' - `posit_server` - Posit Connect server URL
+#' - `posit_account` - Publisher account name
+#' - `pin_prefix` - Prefix applied to the published pin name
+#'
+#' The output is written to a pin named `paste0(pin_prefix, "comparator")`.
+#'
+#' @returns No return value. Called for it side effect of publishing an updated
+#' comparator dataset to a Posit Connect board.
+#'
+#' @details
+#' The processing workflow consists of:
+#' - Reading and combining comparator source CSV files
+#' - Loading Place and metric lookup tables
+#' - Resolving comparator site codes to Place names
+#' - Pivoting metrics from wide to long format
+#' - Resolving metric identifiers to dashboard-friendly metric names
+#' - Deriving month variables for time series analysis
+#' - Publishing the transformed dataset as a Posit Connect pin
+update_comparator_data <- function() {
+  # define the base path
+  path_base <- here::here(".secret", "data", "scorecard", "comparator")
+
+  # read the data files from André and combine to a single tibble
+  df_files <- purrr::map_dfr(
+    .x = c(
+      "data_for_craig.a.csv",
+      "data_for_craig.b.csv"
+    ),
+    .f = ~ readr::read_csv(
+      file = here::here(path_base, .x),
+      show_col_types = FALSE
+    )
+  )
+
+  # get some lookup information
+  lookup_path <- here::here(path_base, "comparator_place_lookup.xlsx")
+
+  df_comparator_place_lookup <- readxl::read_xlsx(
+    path = lookup_path,
+    sheet = "place"
+  )
+  df_comparator_metric_lookup <- readxl::read_xlsx(
+    path = lookup_path,
+    sheet = "metric"
+  )
+
+  # combine and process the data
+  df_comparator <-
+    df_files |>
+
+    # keep only comparator data (not NNHIP Places)
+    dplyr::filter(nnhip_at_place == FALSE) |>
+
+    # resolve place names
+    dplyr::left_join(
+      y = df_comparator_place_lookup,
+      by = c("Ref_NNHIP_Site2" = "lookup")
+    ) |>
+
+    # pivot longer to put metrics on a row of their own
+    tidyr::pivot_longer(
+      cols = !c("nnhip_at_place", "Ref_NNHIP_Site2", "Month", "place")
+    ) |>
+    dplyr::select(place, month = Month, name, value) |>
+
+    # join in the metric names
+    dplyr::left_join(
+      y = df_comparator_metric_lookup,
+      by = c("name" = "lookup")
+    ) |>
+
+    # update data
+    dplyr::mutate(
+      month_zoo = zoo::as.yearmon(month),
+      month_dt = zoo::as.Date(month_zoo)
+    ) |>
+    dplyr::select(-c(name))
+
+  # connect to the Posit Connect board
+  server <- Sys.getenv("posit_server")
+  account <- Sys.getenv("posit_account")
+  prefix <- Sys.getenv("pin_prefix")
+
+  # update the pin
+  pin_name <- glue::glue("{prefix}comparator")
+  board <- pins::board_connect(server = server, account = account)
+  pins::pin_write(
+    board = board,
+    name = pin_name,
+    x = df_comparator,
+    type = "rds"
+  )
+}
+
 # Validation ------------------------------------------------------------------
 
 #' Validate monthly submissions and identify data issues
