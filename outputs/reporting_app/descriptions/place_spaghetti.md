@@ -24,7 +24,7 @@ The selected Place is always shown, regardless of any additional overlays or com
 
 An optional **Show matched comparison** overlay displays rates for statistically matched comparison population.
 
-The comparison population is constructed from high-frailty patients linked to PCNs outside participating NNHIP Places. Comparator PCNs are selected by matching on:
+The comparison population is constructed from intermediate- and high-frailty patients linked to PCNs outside participating NNHIP Places. Comparator PCNs are selected by matching on:
 
 - Percentage of the population aged 65 years or over
 - Percentage of the population living in the 20% most deprived areas nationally
