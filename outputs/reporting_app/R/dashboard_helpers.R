@@ -2888,7 +2888,7 @@ prepare_metric_data <- function(df, metric_selected) {
       hover_label = glue::glue(
         "<b>{place}</b>
           {month_zoo}
-          Rate: {scales::number(x = value, accuracy = 0.1)} per 1,000
+          Rate: {scales::number(x = value, accuracy = 0.1, big.mark = ',')} per 1,000
           Caseload: {engagement_num} of {caseload}
           "
       )
